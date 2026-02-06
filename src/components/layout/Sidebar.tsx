@@ -11,10 +11,12 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
+import { Users } from 'lucide-react';
+
 const navItems = [
   { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { path: '/documents', label: 'Meus Documentos', icon: FileText },
-  { path: '/profile', label: 'Perfil', icon: User },
+  { path: '/users', label: 'Usuários', icon: Users },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {

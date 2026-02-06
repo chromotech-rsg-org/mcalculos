@@ -56,7 +56,19 @@ const DEFAULT_ADMIN: User = {
   city: 'São Paulo',
   state: 'SP',
   notes: 'Usuário administrador do sistema',
+  role: 'admin',
   createdAt: new Date().toISOString(),
+};
+
+// Delete user (admin only, cannot delete own account)
+export const deleteUser = (userId: string): void => {
+  const users = getUsers().filter(u => u.id !== userId);
+  localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+};
+
+// Get user by ID
+export const getUserById = (userId: string): User | undefined => {
+  return getUsers().find(u => u.id === userId);
 };
 
 // Initialize admin user if not exists

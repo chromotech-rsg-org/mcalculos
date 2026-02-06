@@ -6,7 +6,7 @@ interface AuthContextType {
   isLoggedIn: boolean;
   currentUser: User | null;
   login: (email: string, password: string) => { success: boolean; message: string };
-  register: (userData: Omit<User, 'id' | 'createdAt'>) => { success: boolean; message: string };
+  register: (userData: Omit<User, 'id' | 'createdAt' | 'role'>) => { success: boolean; message: string };
   logout: () => void;
   updateUser: (userData: Partial<User>) => void;
 }
@@ -42,7 +42,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     return { success: true, message: 'Login realizado com sucesso!' };
   };
 
-  const register = (userData: Omit<User, 'id' | 'createdAt'>): { success: boolean; message: string } => {
+  const register = (userData: Omit<User, 'id' | 'createdAt' | 'role'>): { success: boolean; message: string } => {
     const existingUser = findUserByEmail(userData.email);
     
     if (existingUser) {
@@ -52,6 +52,7 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
     const newUser: User = {
       ...userData,
       id: generateId(),
+      role: 'user',
       createdAt: new Date().toISOString(),
     };
     
