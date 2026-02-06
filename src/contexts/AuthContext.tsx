@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
 import { User, AuthState } from '@/types';
-import { getAuthState, setAuthState, clearAuth, findUserByEmail, saveUser, generateId } from '@/lib/storage';
+import { getAuthState, setAuthState, clearAuth, findUserByEmail, saveUser, generateId, initializeDefaultUsers } from '@/lib/storage';
 
 interface AuthContextType {
   isLoggedIn: boolean;
@@ -20,6 +20,9 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   useEffect(() => {
+    // Initialize default admin user
+    initializeDefaultUsers();
+    
     const savedState = getAuthState();
     setAuthStateLocal(savedState);
   }, []);

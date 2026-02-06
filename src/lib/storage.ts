@@ -20,6 +20,33 @@ export const clearAuth = (): void => {
   localStorage.removeItem(STORAGE_KEYS.AUTH);
 };
 
+// Default admin user
+const DEFAULT_ADMIN: User = {
+  id: 'admin-001',
+  name: 'Administrador',
+  email: 'admin@mcalculos.com',
+  phone: '(11) 99999-9999',
+  cpf: '000.000.000-00',
+  cep: '01310-100',
+  address: 'Avenida Paulista',
+  number: '1000',
+  complement: 'Sala 100',
+  city: 'São Paulo',
+  state: 'SP',
+  notes: 'Usuário administrador do sistema',
+  createdAt: new Date().toISOString(),
+};
+
+// Initialize admin user if not exists
+export const initializeDefaultUsers = (): void => {
+  const users = getUsers();
+  const adminExists = users.some(u => u.email === DEFAULT_ADMIN.email);
+  if (!adminExists) {
+    users.push(DEFAULT_ADMIN);
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+  }
+};
+
 // Users Storage
 export const getUsers = (): User[] => {
   const data = localStorage.getItem(STORAGE_KEYS.USERS);
