@@ -1,3 +1,5 @@
+export type UserRole = 'admin' | 'user';
+
 export interface User {
   id: string;
   name: string;
@@ -11,6 +13,7 @@ export interface User {
   city: string;
   state: string;
   notes: string;
+  role: UserRole;
   createdAt: string;
 }
 

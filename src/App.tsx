@@ -11,7 +11,7 @@ import ForgotPassword from "@/pages/ForgotPassword";
 import Dashboard from "@/pages/Dashboard";
 import Documents from "@/pages/Documents";
 import DocumentDetail from "@/pages/DocumentDetail";
-import Profile from "@/pages/Profile";
+import Users from "@/pages/Users";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,7 +34,7 @@ const App = () => (
               <Route path="/dashboard" element={<Dashboard />} />
               <Route path="/documents" element={<Documents />} />
               <Route path="/documents/:id" element={<DocumentDetail />} />
-              <Route path="/profile" element={<Profile />} />
+              <Route path="/users" element={<Users />} />
             </Route>
             
             {/* Redirects */}

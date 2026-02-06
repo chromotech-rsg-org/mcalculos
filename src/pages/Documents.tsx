@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Search, Trash2, Download, Eye, CheckCircle, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { FileText, Search, Trash2, Download, Eye, CheckCircle, Clock, AlertCircle, Loader2, Plus, Upload } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,6 +10,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { useToast } from '@/hooks/use-toast';
 import { getDocuments, deleteDocument } from '@/lib/storage';
 import { Document } from '@/types';
+import UploadModal from '@/components/documents/UploadModal';
 
 const Documents: React.FC = () => {
   const { currentUser } = useAuth();
@@ -20,6 +21,10 @@ const Documents: React.FC = () => {
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [docToDelete, setDocToDelete] = useState<string | null>(null);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [isDragging, setIsDragging] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   const documents = currentUser ? getDocuments(currentUser.id) : [];
   
@@ -93,6 +98,54 @@ const Documents: React.FC = () => {
     return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
   };
 
+  const handleDragOver = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(true);
+  }, []);
+
+  const handleDragLeave = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+  }, []);
+
+  const handleDrop = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setIsDragging(false);
+    
+    const files = Array.from(e.dataTransfer.files).filter(
+      file => file.type === 'application/pdf' || file.type.startsWith('image/')
+    );
+    
+    if (files.length > 0) {
+      setUploadFiles(files);
+      setUploadModalOpen(true);
+    } else {
+      toast({
+        variant: 'destructive',
+        title: 'Formato inválido',
+        description: 'Apenas PDFs e imagens são aceitos.',
+      });
+    }
+  }, [toast]);
+
+  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []).filter(
+      file => file.type === 'application/pdf' || file.type.startsWith('image/')
+    );
+    
+    if (files.length > 0) {
+      setUploadFiles(files);
+      setUploadModalOpen(true);
+    }
+    // Reset input
+    e.target.value = '';
+  };
+
+  const handleUploadSuccess = (docId: string) => {
+    setRefreshKey(prev => prev + 1);
+    navigate(`/documents/${docId}`);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -104,16 +157,64 @@ const Documents: React.FC = () => {
           </p>
         </div>
         
-        {selectedIds.length > 0 && (
-          <Button
-            variant="destructive"
-            onClick={() => confirmDelete()}
-          >
-            <Trash2 className="h-4 w-4 mr-2" />
-            Excluir ({selectedIds.length})
-          </Button>
-        )}
+        <div className="flex items-center gap-2">
+          {selectedIds.length > 0 && (
+            <Button
+              variant="destructive"
+              onClick={() => confirmDelete()}
+            >
+              <Trash2 className="h-4 w-4 mr-2" />
+              Excluir ({selectedIds.length})
+            </Button>
+          )}
+          
+          <label>
+            <input
+              type="file"
+              multiple
+              accept=".pdf,image/*"
+              className="hidden"
+              onChange={handleFileSelect}
+            />
+            <Button className="gradient-primary text-primary-foreground cursor-pointer" asChild>
+              <span>
+                <Plus className="h-4 w-4 mr-2" />
+                Novo Documento
+              </span>
+            </Button>
+          </label>
+        </div>
       </div>
+
+      {/* Upload Drop Zone */}
+      <Card 
+        className="overflow-hidden"
+        onDragOver={handleDragOver}
+        onDragLeave={handleDragLeave}
+        onDrop={handleDrop}
+      >
+        <div
+          className={`
+            relative p-6 border-2 border-dashed rounded-xl transition-all duration-300
+            ${isDragging 
+              ? 'border-primary bg-primary/5 scale-[1.01]' 
+              : 'border-muted-foreground/25 hover:border-primary/50'}
+          `}
+        >
+          <div className="flex flex-col items-center text-center">
+            <div className={`
+              p-3 rounded-xl mb-3 transition-all duration-300
+              ${isDragging ? 'bg-primary scale-110' : 'gradient-primary'}
+            `}>
+              <Upload className="h-6 w-6 text-primary-foreground" />
+            </div>
+            
+            <p className="text-sm text-muted-foreground">
+              {isDragging ? 'Solte os arquivos aqui!' : 'Arraste e solte PDFs ou imagens aqui'}
+            </p>
+          </div>
+        </div>
+      </Card>
 
       {/* Search */}
       <div className="relative">
@@ -254,6 +355,15 @@ const Documents: React.FC = () => {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+      {/* Upload Modal */}
+      <UploadModal
+        open={uploadModalOpen}
+        onOpenChange={setUploadModalOpen}
+        files={uploadFiles}
+        setFiles={setUploadFiles}
+        userId={currentUser?.id || ''}
+        onSuccess={handleUploadSuccess}
+      />
     </div>
   );
 };
