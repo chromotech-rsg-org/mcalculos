@@ -22,14 +22,14 @@ declare global {
 
 // Map of icon names to Lordicon CDN URLs
 export const LORDICON_URLS = {
-  dashboard: 'https://cdn.lordicon.com/wmwqvixz.json',
-  document: 'https://cdn.lordicon.com/pozplzfj.json',
+  dashboard: 'https://cdn.lordicon.com/cnpvyndp.json',
+  document: 'https://cdn.lordicon.com/fkdzyfle.json',
   users: 'https://cdn.lordicon.com/kthelypq.json',
   logout: 'https://cdn.lordicon.com/moscwhoj.json',
   upload: 'https://cdn.lordicon.com/smwmetfi.json',
   mail: 'https://cdn.lordicon.com/diihvcfp.json',
   lock: 'https://cdn.lordicon.com/prjooket.json',
-  check: 'https://cdn.lordicon.com/oqdnkrml.json',
+  check: 'https://cdn.lordicon.com/lomfljuq.json',
   clock: 'https://cdn.lordicon.com/kbtmbyzy.json',
   search: 'https://cdn.lordicon.com/msoeawqm.json',
   trash: 'https://cdn.lordicon.com/skkahier.json',
