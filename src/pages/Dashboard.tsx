@@ -206,7 +206,7 @@ const Dashboard: React.FC = () => {
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-primary/10">
-                <FileText className="h-6 w-6 text-primary" />
+                <FileText className="h-6 w-6 text-primary icon-float" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{documents.length}</p>
@@ -220,7 +220,7 @@ const Dashboard: React.FC = () => {
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-yellow-500/10">
-                <Clock className="h-6 w-6 text-yellow-500" />
+                <Clock className="h-6 w-6 text-yellow-500 icon-wiggle" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{pendingCount}</p>
@@ -234,7 +234,7 @@ const Dashboard: React.FC = () => {
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-primary/10">
-                <CheckCircle className="h-6 w-6 text-primary" />
+                <CheckCircle className="h-6 w-6 text-primary icon-heartbeat" />
               </div>
               <div>
                 <p className="text-2xl font-bold">{extractedCount}</p>
@@ -263,7 +263,7 @@ const Dashboard: React.FC = () => {
               p-4 rounded-2xl mb-4 transition-all duration-300
               ${isDragging ? 'bg-primary scale-110' : 'gradient-primary'}
             `}>
-              <Upload className="h-8 w-8 text-primary-foreground" />
+              <Upload className="h-8 w-8 text-primary-foreground icon-bounce" />
             </div>
             
             <h3 className="text-xl font-semibold mb-2">
@@ -333,7 +333,7 @@ const Dashboard: React.FC = () => {
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50" />
+              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50 icon-float" />
               <p>Nenhum documento enviado ainda</p>
               <p className="text-sm">Faça o upload do seu primeiro holerite acima</p>
             </div>

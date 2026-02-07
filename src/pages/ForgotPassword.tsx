@@ -102,7 +102,7 @@ const ForgotPassword: React.FC = () => {
         ) : (
           <CardFooter className="flex flex-col gap-4">
             <div className="w-16 h-16 mx-auto bg-primary/10 rounded-full flex items-center justify-center">
-              <Mail className="h-8 w-8 text-primary" />
+              <Mail className="h-8 w-8 text-primary icon-heartbeat" />
             </div>
             <p className="text-sm text-muted-foreground text-center">
               Não recebeu o email? Verifique a pasta de spam ou{' '}
