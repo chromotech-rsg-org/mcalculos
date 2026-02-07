@@ -38,11 +38,11 @@ export const LORDICON_URLS = {
   save: 'https://cdn.lordicon.com/hqymfzvj.json',
   user: 'https://cdn.lordicon.com/dxjqoygy.json',
   shield: 'https://cdn.lordicon.com/nocovwne.json',
-  eye: 'https://cdn.lordicon.com/anqzetal.json',
+  eye: 'https://cdn.lordicon.com/fmjvulow.json',
   send: 'https://cdn.lordicon.com/ternnbni.json',
   arrowLeft: 'https://cdn.lordicon.com/zmkotitn.json',
   alert: 'https://cdn.lordicon.com/usownftb.json',
-  download: 'https://cdn.lordicon.com/ternnbni.json',
+  download: 'https://cdn.lordicon.com/albqovim.json',
   login: 'https://cdn.lordicon.com/hrjifpbq.json',
 } as const;
 
