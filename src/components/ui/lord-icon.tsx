@@ -29,7 +29,7 @@ export const LORDICON_URLS = {
   upload: 'https://cdn.lordicon.com/smwmetfi.json',
   mail: 'https://cdn.lordicon.com/diihvcfp.json',
   lock: 'https://cdn.lordicon.com/prjooket.json',
-  check: 'https://cdn.lordicon.com/lomfljuq.json',
+  check: 'https://cdn.lordicon.com/yqzmiobz.json',
   clock: 'https://cdn.lordicon.com/kbtmbyzy.json',
   search: 'https://cdn.lordicon.com/msoeawqm.json',
   trash: 'https://cdn.lordicon.com/skkahier.json',
@@ -38,11 +38,11 @@ export const LORDICON_URLS = {
   save: 'https://cdn.lordicon.com/hqymfzvj.json',
   user: 'https://cdn.lordicon.com/dxjqoygy.json',
   shield: 'https://cdn.lordicon.com/nocovwne.json',
-  eye: 'https://cdn.lordicon.com/fmjvulzw.json',
+  eye: 'https://cdn.lordicon.com/vfczflna.json',
   send: 'https://cdn.lordicon.com/ternnbni.json',
   arrowLeft: 'https://cdn.lordicon.com/zmkotitn.json',
   alert: 'https://cdn.lordicon.com/usownftb.json',
-  download: 'https://cdn.lordicon.com/ternnbni.json',
+  download: 'https://cdn.lordicon.com/vdjwmfqs.json',
   login: 'https://cdn.lordicon.com/hrjifpbq.json',
 } as const;
 
