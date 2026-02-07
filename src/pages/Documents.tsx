@@ -85,7 +85,7 @@ const Documents: React.FC = () => {
       case 'extracting':
         return <Loader2 className="h-4 w-4 text-primary animate-spin" />;
       case 'extracted':
-        return <LordIcon icon="check" size={16} trigger="loop" delay={5000} colors={{ primary: '#08a88a', secondary: '#08a88a' }} />;
+        return <LordIcon icon="check" size={20} trigger="loop" delay={5000} colors={{ primary: '#08a88a', secondary: '#08a88a' }} />;
       case 'error':
         return <LordIcon icon="alert" size={16} trigger="loop" delay={3000} colors={{ primary: '#ef4444', secondary: '#ef4444' }} />;
     }
@@ -267,7 +267,7 @@ const Documents: React.FC = () => {
                     onClick={() => navigate(`/documents/${doc.id}`)}
                   >
                     <div className="p-2 rounded-lg bg-primary/10">
-                      <LordIcon icon="document" size={28} trigger="hover" colors={{ primary: '#0d9668', secondary: '#2563eb' }} />
+                      <LordIcon icon="document" size={28} trigger="hover" colors={{ primary: '#0d9668', secondary: '#0d9668' }} />
                     </div>
                     
                     <div className="flex-1 min-w-0">
