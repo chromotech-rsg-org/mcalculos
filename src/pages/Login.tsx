@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
 import { Link, Navigate } from 'react-router-dom';
-import { Mail, Lock, LogIn, Eye, EyeOff } from 'lucide-react';
+import { Eye, EyeOff } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import LordIcon from '@/components/ui/lord-icon';
 import logo from '@/assets/logo.jpeg';
 
 const Login: React.FC = () => {
@@ -25,7 +26,6 @@ const Login: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 500));
 
     const result = login(email, password);
@@ -70,7 +70,9 @@ const Login: React.FC = () => {
             <div className="space-y-2">
               <Label htmlFor="email">Email</Label>
               <div className="relative">
-                <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                  <LordIcon icon="mail" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
+                </div>
                 <Input
                   id="email"
                   type="email"
@@ -86,7 +88,9 @@ const Login: React.FC = () => {
             <div className="space-y-2">
               <Label htmlFor="password">Senha</Label>
               <div className="relative">
-                <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                  <LordIcon icon="lock" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
+                </div>
                 <Input
                   id="password"
                   type={showPassword ? 'text' : 'password'}
@@ -129,7 +133,7 @@ const Login: React.FC = () => {
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <LogIn className="h-5 w-5 icon-hover-swing" />
+                  <LordIcon icon="login" size={20} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
                   Entrar
                 </div>
               )}

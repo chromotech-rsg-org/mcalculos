@@ -1,9 +1,10 @@
 import React from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { LayoutDashboard, FileText, User, LogOut, Menu, X } from 'lucide-react';
+import { LogOut, Menu, X } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import LordIcon, { LordIconName } from '@/components/ui/lord-icon';
 import logo from '@/assets/logo.jpeg';
 
 interface SidebarProps {
@@ -11,12 +12,10 @@ interface SidebarProps {
   onToggle: () => void;
 }
 
-import { Users } from 'lucide-react';
-
-const navItems = [
-  { path: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { path: '/documents', label: 'Meus Documentos', icon: FileText },
-  { path: '/users', label: 'Usuários', icon: Users },
+const navItems: { path: string; label: string; icon: LordIconName }[] = [
+  { path: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
+  { path: '/documents', label: 'Meus Documentos', icon: 'document' },
+  { path: '/users', label: 'Usuários', icon: 'users' },
 ];
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
@@ -78,7 +77,6 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
           {/* Navigation */}
           <nav className="flex-1 p-4 space-y-2">
             {navItems.map((item) => {
-              const Icon = item.icon;
               const isActive = location.pathname === item.path;
               
               return (
@@ -93,7 +91,14 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
                       : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                   )}
                 >
-                  <Icon className={cn("h-5 w-5 transition-transform duration-300", isActive ? "icon-pulse-glow" : "group-hover:scale-125 group-hover:rotate-6")} />
+                  <LordIcon
+                    icon={item.icon}
+                    size={22}
+                    trigger={isActive ? 'loop' : 'hover'}
+                    delay={isActive ? 3000 : undefined}
+                    colors={{ primary: '#ffffff', secondary: '#ffffff' }}
+                    target={`.group`}
+                  />
                   <span className="font-medium">{item.label}</span>
                 </Link>
               );
@@ -106,7 +111,12 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
               onClick={logout}
               className="group flex items-center gap-3 px-4 py-3 w-full rounded-xl text-sidebar-foreground hover:bg-destructive/10 hover:text-destructive transition-all duration-200"
             >
-              <LogOut className="h-5 w-5 transition-transform duration-300 group-hover:-translate-x-1" />
+              <LordIcon
+                icon="logout"
+                size={22}
+                trigger="hover"
+                colors={{ primary: '#ef4444', secondary: '#ef4444' }}
+              />
               <span className="font-medium">Sair</span>
             </button>
           </div>

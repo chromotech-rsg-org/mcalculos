@@ -1,5 +1,6 @@
 import React, { useState, useCallback } from 'react';
-import { Upload, FileText, Clock, CheckCircle, AlertCircle, Plus, X, Loader2 } from 'lucide-react';
+import { Plus, X, Loader2 } from 'lucide-react';
+import LordIcon from '@/components/ui/lord-icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -165,13 +166,13 @@ const Dashboard: React.FC = () => {
   const getStatusIcon = (status: Document['status']) => {
     switch (status) {
       case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-500" />;
+        return <LordIcon icon="clock" size={16} trigger="loop" delay={3000} colors={{ primary: '#eab308', secondary: '#eab308' }} />;
       case 'extracting':
         return <Loader2 className="h-4 w-4 text-primary animate-spin" />;
       case 'extracted':
-        return <CheckCircle className="h-4 w-4 text-primary" />;
+        return <LordIcon icon="check" size={16} trigger="loop" delay={5000} colors={{ primary: '#08a88a', secondary: '#08a88a' }} />;
       case 'error':
-        return <AlertCircle className="h-4 w-4 text-destructive" />;
+        return <LordIcon icon="alert" size={16} trigger="loop" delay={3000} colors={{ primary: '#ef4444', secondary: '#ef4444' }} />;
     }
   };
 
@@ -206,7 +207,7 @@ const Dashboard: React.FC = () => {
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-primary/10">
-                <FileText className="h-6 w-6 text-primary icon-float" />
+                <LordIcon icon="document" size={24} trigger="loop" delay={4000} colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{documents.length}</p>
@@ -219,8 +220,8 @@ const Dashboard: React.FC = () => {
         <Card>
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
-              <div className="p-3 rounded-xl bg-yellow-500/10">
-                <Clock className="h-6 w-6 text-yellow-500 icon-wiggle" />
+              <div className="p-3 rounded-xl bg-accent">
+                <LordIcon icon="clock" size={24} trigger="loop" delay={3000} colors={{ primary: '#eab308', secondary: '#eab308' }} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{pendingCount}</p>
@@ -234,7 +235,7 @@ const Dashboard: React.FC = () => {
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-primary/10">
-                <CheckCircle className="h-6 w-6 text-primary icon-heartbeat" />
+                <LordIcon icon="check" size={24} trigger="loop" delay={4000} colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{extractedCount}</p>
@@ -263,7 +264,7 @@ const Dashboard: React.FC = () => {
               p-4 rounded-2xl mb-4 transition-all duration-300
               ${isDragging ? 'bg-primary scale-110' : 'gradient-primary'}
             `}>
-              <Upload className="h-8 w-8 text-primary-foreground icon-bounce" />
+              <LordIcon icon="upload" size={32} trigger="loop" delay={2000} colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
             </div>
             
             <h3 className="text-xl font-semibold mb-2">
@@ -313,7 +314,7 @@ const Dashboard: React.FC = () => {
                 >
                   <div className="flex items-center gap-4">
                     <div className="p-2 rounded-lg bg-primary/10">
-                      <FileText className="h-5 w-5 text-primary" />
+                      <LordIcon icon="document" size={20} trigger="hover" colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
                     </div>
                     <div>
                       <p className="font-medium">{doc.name}</p>
@@ -333,7 +334,7 @@ const Dashboard: React.FC = () => {
             </div>
           ) : (
             <div className="text-center py-8 text-muted-foreground">
-              <FileText className="h-12 w-12 mx-auto mb-4 opacity-50 icon-float" />
+              <div className="mx-auto mb-4 opacity-50"><LordIcon icon="document" size={48} trigger="loop" delay={3000} colors={{ primary: '#6b7280', secondary: '#6b7280' }} /></div>
               <p>Nenhum documento enviado ainda</p>
               <p className="text-sm">Faça o upload do seu primeiro holerite acima</p>
             </div>
@@ -362,7 +363,7 @@ const Dashboard: React.FC = () => {
                     className="flex items-center justify-between p-2 rounded-lg bg-muted"
                   >
                     <div className="flex items-center gap-2 truncate">
-                      <FileText className="h-4 w-4 text-primary shrink-0" />
+                      <LordIcon icon="document" size={16} trigger="hover" colors={{ primary: '#08a88a', secondary: '#08a88a' }} />
                       <span className="text-sm truncate">{file.name}</span>
                     </div>
                     <button
@@ -418,7 +419,7 @@ const Dashboard: React.FC = () => {
                 </>
               ) : (
                 <>
-                  <Upload className="h-4 w-4 mr-2" />
+                  <LordIcon icon="upload" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
                   Enviar
                 </>
               )}
