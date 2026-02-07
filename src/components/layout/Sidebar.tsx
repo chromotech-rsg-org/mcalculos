@@ -113,7 +113,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
             >
               <LordIcon
                 icon="logout"
-                size={22}
+                size={32}
                 trigger="hover"
                 colors={{ primary: '#ef4444', secondary: '#ef4444' }}
               />

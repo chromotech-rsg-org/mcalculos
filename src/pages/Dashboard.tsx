@@ -207,7 +207,7 @@ const Dashboard: React.FC = () => {
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-primary/10">
-                <LordIcon icon="document" size={24} trigger="loop" delay={4000} colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
+                <LordIcon icon="document" size={36} trigger="loop" delay={4000} colors={{ primary: '#0d9668', secondary: '#2563eb' }} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{documents.length}</p>
@@ -221,7 +221,7 @@ const Dashboard: React.FC = () => {
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-accent">
-                <LordIcon icon="clock" size={24} trigger="loop" delay={3000} colors={{ primary: '#eab308', secondary: '#eab308' }} />
+                <LordIcon icon="clock" size={36} trigger="loop" delay={3000} colors={{ primary: '#ca8a04', secondary: '#ca8a04' }} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{pendingCount}</p>
@@ -235,7 +235,7 @@ const Dashboard: React.FC = () => {
           <CardContent className="pt-6">
             <div className="flex items-center gap-4">
               <div className="p-3 rounded-xl bg-primary/10">
-                <LordIcon icon="check" size={24} trigger="loop" delay={4000} colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
+                <LordIcon icon="check" size={36} trigger="loop" delay={4000} colors={{ primary: '#0d9668', secondary: '#2563eb' }} />
               </div>
               <div>
                 <p className="text-2xl font-bold">{extractedCount}</p>
@@ -264,7 +264,7 @@ const Dashboard: React.FC = () => {
               p-4 rounded-2xl mb-4 transition-all duration-300
               ${isDragging ? 'bg-primary scale-110' : 'gradient-primary'}
             `}>
-              <LordIcon icon="upload" size={32} trigger="loop" delay={2000} colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
+              <LordIcon icon="upload" size={40} trigger="loop" delay={2000} colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
             </div>
             
             <h3 className="text-xl font-semibold mb-2">
@@ -314,7 +314,7 @@ const Dashboard: React.FC = () => {
                 >
                   <div className="flex items-center gap-4">
                     <div className="p-2 rounded-lg bg-primary/10">
-                      <LordIcon icon="document" size={20} trigger="hover" colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
+                      <LordIcon icon="document" size={24} trigger="hover" colors={{ primary: '#0d9668', secondary: '#2563eb' }} />
                     </div>
                     <div>
                       <p className="font-medium">{doc.name}</p>

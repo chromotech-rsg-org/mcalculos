@@ -207,7 +207,7 @@ const Documents: React.FC = () => {
               p-3 rounded-xl mb-3 transition-all duration-300
               ${isDragging ? 'bg-primary scale-110' : 'gradient-primary'}
             `}>
-              <LordIcon icon="upload" size={24} trigger="loop" delay={2000} colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
+              <LordIcon icon="upload" size={32} trigger="loop" delay={2000} colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
             </div>
             
             <p className="text-sm text-muted-foreground">
@@ -267,7 +267,7 @@ const Documents: React.FC = () => {
                     onClick={() => navigate(`/documents/${doc.id}`)}
                   >
                     <div className="p-2 rounded-lg bg-primary/10">
-                      <LordIcon icon="document" size={20} trigger="hover" colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
+                      <LordIcon icon="document" size={28} trigger="hover" colors={{ primary: '#0d9668', secondary: '#2563eb' }} />
                     </div>
                     
                     <div className="flex-1 min-w-0">
@@ -298,7 +298,7 @@ const Documents: React.FC = () => {
                         navigate(`/documents/${doc.id}`);
                       }}
                     >
-                      <LordIcon icon="eye" size={16} trigger="hover" colors={{ primary: '#121331', secondary: '#08a88a' }} />
+                      <LordIcon icon="eye" size={20} trigger="hover" colors={{ primary: '#0d9668', secondary: '#0d9668' }} />
                     </Button>
                     <Button
                       variant="ghost"
@@ -308,7 +308,7 @@ const Documents: React.FC = () => {
                         downloadFile(doc);
                       }}
                     >
-                      <LordIcon icon="download" size={16} trigger="hover" colors={{ primary: '#121331', secondary: '#08a88a' }} />
+                      <LordIcon icon="download" size={20} trigger="hover" colors={{ primary: '#2563eb', secondary: '#2563eb' }} />
                     </Button>
                     <Button
                       variant="ghost"
@@ -318,7 +318,7 @@ const Documents: React.FC = () => {
                         confirmDelete(doc.id);
                       }}
                     >
-                      <LordIcon icon="trash" size={16} trigger="hover" colors={{ primary: '#ef4444', secondary: '#ef4444' }} />
+                      <LordIcon icon="trash" size={20} trigger="hover" colors={{ primary: '#dc2626', secondary: '#dc2626' }} />
                     </Button>
                   </div>
                 </div>
