@@ -1,6 +1,7 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileText, Search, Trash2, Download, Eye, CheckCircle, Clock, AlertCircle, Loader2, Plus, Upload } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import LordIcon from '@/components/ui/lord-icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -80,13 +81,13 @@ const Documents: React.FC = () => {
   const getStatusIcon = (status: Document['status']) => {
     switch (status) {
       case 'pending':
-        return <Clock className="h-4 w-4 text-yellow-500" />;
+        return <LordIcon icon="clock" size={16} trigger="loop" delay={3000} colors={{ primary: '#eab308', secondary: '#eab308' }} />;
       case 'extracting':
         return <Loader2 className="h-4 w-4 text-primary animate-spin" />;
       case 'extracted':
-        return <CheckCircle className="h-4 w-4 text-primary" />;
+        return <LordIcon icon="check" size={16} trigger="loop" delay={5000} colors={{ primary: '#08a88a', secondary: '#08a88a' }} />;
       case 'error':
-        return <AlertCircle className="h-4 w-4 text-destructive" />;
+        return <LordIcon icon="alert" size={16} trigger="loop" delay={3000} colors={{ primary: '#ef4444', secondary: '#ef4444' }} />;
     }
   };
 
@@ -163,8 +164,8 @@ const Documents: React.FC = () => {
               variant="destructive"
               onClick={() => confirmDelete()}
             >
-              <Trash2 className="h-4 w-4 mr-2" />
-              Excluir ({selectedIds.length})
+              <LordIcon icon="trash" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
+              <span className="ml-2">Excluir ({selectedIds.length})</span>
             </Button>
           )}
           
@@ -178,8 +179,8 @@ const Documents: React.FC = () => {
             />
             <Button className="gradient-primary text-primary-foreground cursor-pointer" asChild>
               <span>
-                <Plus className="h-4 w-4 mr-2" />
-                Novo Documento
+                <LordIcon icon="plus" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
+                <span className="ml-2">Novo Documento</span>
               </span>
             </Button>
           </label>
@@ -206,7 +207,7 @@ const Documents: React.FC = () => {
               p-3 rounded-xl mb-3 transition-all duration-300
               ${isDragging ? 'bg-primary scale-110' : 'gradient-primary'}
             `}>
-              <Upload className="h-6 w-6 text-primary-foreground icon-bounce" />
+              <LordIcon icon="upload" size={24} trigger="loop" delay={2000} colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
             </div>
             
             <p className="text-sm text-muted-foreground">
@@ -218,7 +219,9 @@ const Documents: React.FC = () => {
 
       {/* Search */}
       <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+        <div className="absolute left-3 top-1/2 -translate-y-1/2">
+          <LordIcon icon="search" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
+        </div>
         <Input
           placeholder="Buscar documentos..."
           value={search}
@@ -264,7 +267,7 @@ const Documents: React.FC = () => {
                     onClick={() => navigate(`/documents/${doc.id}`)}
                   >
                     <div className="p-2 rounded-lg bg-primary/10">
-                      <FileText className="h-5 w-5 text-primary" />
+                      <LordIcon icon="document" size={20} trigger="hover" colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
                     </div>
                     
                     <div className="flex-1 min-w-0">
@@ -295,7 +298,7 @@ const Documents: React.FC = () => {
                         navigate(`/documents/${doc.id}`);
                       }}
                     >
-                      <Eye className="h-4 w-4" />
+                      <LordIcon icon="eye" size={16} trigger="hover" colors={{ primary: '#121331', secondary: '#08a88a' }} />
                     </Button>
                     <Button
                       variant="ghost"
@@ -305,7 +308,7 @@ const Documents: React.FC = () => {
                         downloadFile(doc);
                       }}
                     >
-                      <Download className="h-4 w-4" />
+                      <LordIcon icon="download" size={16} trigger="hover" colors={{ primary: '#121331', secondary: '#08a88a' }} />
                     </Button>
                     <Button
                       variant="ghost"
@@ -315,7 +318,7 @@ const Documents: React.FC = () => {
                         confirmDelete(doc.id);
                       }}
                     >
-                      <Trash2 className="h-4 w-4 text-destructive" />
+                      <LordIcon icon="trash" size={16} trigger="hover" colors={{ primary: '#ef4444', secondary: '#ef4444' }} />
                     </Button>
                   </div>
                 </div>
@@ -323,7 +326,7 @@ const Documents: React.FC = () => {
             </div>
           ) : (
             <div className="text-center py-12 text-muted-foreground">
-              <FileText className="h-16 w-16 mx-auto mb-4 opacity-50 icon-float" />
+              <div className="mx-auto mb-4 opacity-50"><LordIcon icon="document" size={64} trigger="loop" delay={3000} colors={{ primary: '#6b7280', secondary: '#6b7280' }} /></div>
               <p className="text-lg font-medium">Nenhum documento encontrado</p>
               <p className="text-sm">
                 {search ? 'Tente uma busca diferente' : 'Faça o upload do seu primeiro documento'}
@@ -349,7 +352,8 @@ const Documents: React.FC = () => {
               Cancelar
             </Button>
             <Button variant="destructive" onClick={() => handleDelete(docToDelete || undefined)}>
-              <Trash2 className="h-4 w-4 mr-2" />
+              <LordIcon icon="trash" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
+              <span className="ml-2">Excluir</span>
               Excluir
             </Button>
           </DialogFooter>

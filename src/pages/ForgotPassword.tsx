@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import { Mail, ArrowLeft, Send } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
+import LordIcon from '@/components/ui/lord-icon';
 import logo from '@/assets/logo.jpeg';
 
 const ForgotPassword: React.FC = () => {
@@ -18,7 +18,6 @@ const ForgotPassword: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate API delay
     await new Promise(resolve => setTimeout(resolve, 1000));
 
     toast({
@@ -57,7 +56,9 @@ const ForgotPassword: React.FC = () => {
               <div className="space-y-2">
                 <Label htmlFor="email">Email</Label>
                 <div className="relative">
-                  <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                    <LordIcon icon="mail" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
+                  </div>
                   <Input
                     id="email"
                     type="email"
@@ -84,7 +85,7 @@ const ForgotPassword: React.FC = () => {
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <Send className="h-5 w-5" />
+                    <LordIcon icon="send" size={20} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
                     Enviar Link
                   </div>
                 )}
@@ -94,7 +95,7 @@ const ForgotPassword: React.FC = () => {
                 to="/login"
                 className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground"
               >
-                <ArrowLeft className="h-4 w-4" />
+                <LordIcon icon="arrowLeft" size={16} trigger="hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
                 Voltar para o login
               </Link>
             </CardFooter>
@@ -102,7 +103,7 @@ const ForgotPassword: React.FC = () => {
         ) : (
           <CardFooter className="flex flex-col gap-4">
             <div className="w-16 h-16 mx-auto bg-primary/10 rounded-full flex items-center justify-center">
-              <Mail className="h-8 w-8 text-primary icon-heartbeat" />
+              <LordIcon icon="mail" size={32} trigger="loop" delay={2000} colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
             </div>
             <p className="text-sm text-muted-foreground text-center">
               Não recebeu o email? Verifique a pasta de spam ou{' '}
@@ -117,7 +118,7 @@ const ForgotPassword: React.FC = () => {
               to="/login"
               className="flex items-center justify-center gap-2 text-sm text-muted-foreground hover:text-foreground"
             >
-              <ArrowLeft className="h-4 w-4" />
+              <LordIcon icon="arrowLeft" size={16} trigger="hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
               Voltar para o login
             </Link>
           </CardFooter>

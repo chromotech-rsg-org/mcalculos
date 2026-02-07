@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { User as UserIcon, Mail, Phone, MapPin, FileText, Save, Loader2, Plus, Trash2, Edit, Shield, UserCheck } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
+import LordIcon from '@/components/ui/lord-icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -207,9 +208,9 @@ const Users: React.FC = () => {
 
   const getRoleIcon = (role: UserRole) => {
     return role === 'admin' ? (
-      <Shield className="h-4 w-4 text-primary" />
+      <LordIcon icon="shield" size={16} trigger="loop" delay={5000} colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
     ) : (
-      <UserCheck className="h-4 w-4 text-muted-foreground" />
+      <LordIcon icon="user" size={16} trigger="hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
     );
   };
 
@@ -241,7 +242,9 @@ const Users: React.FC = () => {
                 <div className="space-y-2">
                   <Label htmlFor="name">Nome Completo</Label>
                   <div className="relative">
-                    <UserIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                      <LordIcon icon="user" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
+                    </div>
                     <Input
                       id="name"
                       name="name"
@@ -255,7 +258,9 @@ const Users: React.FC = () => {
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <div className="relative">
-                    <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                      <LordIcon icon="mail" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
+                    </div>
                     <Input
                       id="email"
                       name="email"
@@ -271,7 +276,9 @@ const Users: React.FC = () => {
                 <div className="space-y-2">
                   <Label htmlFor="phone">Celular</Label>
                   <div className="relative">
-                    <Phone className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                      <LordIcon icon="user" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
+                    </div>
                     <Input
                       id="phone"
                       name="phone"
@@ -285,7 +292,9 @@ const Users: React.FC = () => {
                 <div className="space-y-2">
                   <Label htmlFor="cpf">CPF</Label>
                   <div className="relative">
-                    <FileText className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                      <LordIcon icon="document" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
+                    </div>
                     <Input
                       id="cpf"
                       name="cpf"
@@ -301,7 +310,9 @@ const Users: React.FC = () => {
                 <div className="space-y-2">
                   <Label htmlFor="cep">CEP</Label>
                   <div className="relative">
-                    <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-muted-foreground" />
+                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
+                      <LordIcon icon="search" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
+                    </div>
                     <Input
                       id="cep"
                       name="cep"
@@ -391,7 +402,7 @@ const Users: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <Save className="h-4 w-4 mr-2" />
+                    <LordIcon icon="save" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
                     Salvar Alterações
                   </>
                 )}
@@ -415,8 +426,8 @@ const Users: React.FC = () => {
         </div>
 
         <Button onClick={openNewUserModal} className="gradient-primary text-primary-foreground">
-          <Plus className="h-4 w-4 mr-2" />
-          Novo Usuário
+          <LordIcon icon="plus" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
+          <span className="ml-2">Novo Usuário</span>
         </Button>
       </div>
 
@@ -435,7 +446,7 @@ const Users: React.FC = () => {
                 className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
               >
                 <div className="p-2 rounded-lg bg-primary/10">
-                  <UserIcon className="h-5 w-5 text-primary icon-float" />
+                  <LordIcon icon="user" size={20} trigger="loop" delay={4000} colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
                 </div>
                 
                 <div className="flex-1 min-w-0">
@@ -455,7 +466,7 @@ const Users: React.FC = () => {
                     size="icon"
                     onClick={() => openEditModal(user)}
                   >
-                    <Edit className="h-4 w-4" />
+                    <LordIcon icon="edit" size={16} trigger="hover" colors={{ primary: '#121331', secondary: '#08a88a' }} />
                   </Button>
                   {user.id !== currentUser?.id && (
                     <Button
@@ -463,7 +474,7 @@ const Users: React.FC = () => {
                       size="icon"
                       onClick={() => confirmDelete(user)}
                     >
-                      <Trash2 className="h-4 w-4 text-destructive" />
+                      <LordIcon icon="trash" size={16} trigger="hover" colors={{ primary: '#ef4444', secondary: '#ef4444' }} />
                     </Button>
                   )}
                 </div>
@@ -636,7 +647,7 @@ const Users: React.FC = () => {
                   </>
                 ) : (
                   <>
-                    <Save className="h-4 w-4 mr-2" />
+                    <LordIcon icon="save" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
                     Salvar
                   </>
                 )}
@@ -660,7 +671,8 @@ const Users: React.FC = () => {
               Cancelar
             </Button>
             <Button variant="destructive" onClick={handleDelete}>
-              <Trash2 className="h-4 w-4 mr-2" />
+              <LordIcon icon="trash" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
+              <span className="ml-2">Excluir</span>
               Excluir
             </Button>
           </DialogFooter>
