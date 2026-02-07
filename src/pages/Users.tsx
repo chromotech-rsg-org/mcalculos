@@ -435,7 +435,7 @@ const Users: React.FC = () => {
                 className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
               >
                 <div className="p-2 rounded-lg bg-primary/10">
-                  <UserIcon className="h-5 w-5 text-primary" />
+                  <UserIcon className="h-5 w-5 text-primary icon-float" />
                 </div>
                 
                 <div className="flex-1 min-w-0">

@@ -129,7 +129,7 @@ const Login: React.FC = () => {
                 </div>
               ) : (
                 <div className="flex items-center gap-2">
-                  <LogIn className="h-5 w-5" />
+                  <LogIn className="h-5 w-5 icon-hover-swing" />
                   Entrar
                 </div>
               )}

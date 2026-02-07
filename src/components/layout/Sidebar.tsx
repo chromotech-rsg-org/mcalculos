@@ -87,13 +87,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
                   to={item.path}
                   onClick={() => window.innerWidth < 1024 && onToggle()}
                   className={cn(
-                    'flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200',
+                    'group flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200',
                     isActive
                       ? 'bg-sidebar-primary text-sidebar-primary-foreground'
                       : 'text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground'
                   )}
                 >
-                  <Icon className="h-5 w-5" />
+                  <Icon className={cn("h-5 w-5 transition-transform duration-300", isActive ? "icon-pulse-glow" : "group-hover:scale-125 group-hover:rotate-6")} />
                   <span className="font-medium">{item.label}</span>
                 </Link>
               );
@@ -104,9 +104,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, onToggle }) => {
           <div className="p-4 border-t border-sidebar-border">
             <button
               onClick={logout}
-              className="flex items-center gap-3 px-4 py-3 w-full rounded-xl text-sidebar-foreground hover:bg-destructive/10 hover:text-destructive transition-all duration-200"
+              className="group flex items-center gap-3 px-4 py-3 w-full rounded-xl text-sidebar-foreground hover:bg-destructive/10 hover:text-destructive transition-all duration-200"
             >
-              <LogOut className="h-5 w-5" />
+              <LogOut className="h-5 w-5 transition-transform duration-300 group-hover:-translate-x-1" />
               <span className="font-medium">Sair</span>
             </button>
           </div>

@@ -206,7 +206,7 @@ const Documents: React.FC = () => {
               p-3 rounded-xl mb-3 transition-all duration-300
               ${isDragging ? 'bg-primary scale-110' : 'gradient-primary'}
             `}>
-              <Upload className="h-6 w-6 text-primary-foreground" />
+              <Upload className="h-6 w-6 text-primary-foreground icon-bounce" />
             </div>
             
             <p className="text-sm text-muted-foreground">
@@ -323,7 +323,7 @@ const Documents: React.FC = () => {
             </div>
           ) : (
             <div className="text-center py-12 text-muted-foreground">
-              <FileText className="h-16 w-16 mx-auto mb-4 opacity-50" />
+              <FileText className="h-16 w-16 mx-auto mb-4 opacity-50 icon-float" />
               <p className="text-lg font-medium">Nenhum documento encontrado</p>
               <p className="text-sm">
                 {search ? 'Tente uma busca diferente' : 'Faça o upload do seu primeiro documento'}
