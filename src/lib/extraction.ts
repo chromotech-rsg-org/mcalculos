@@ -1,30 +1,18 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import Tesseract from 'tesseract.js';
 import { ExtractedData, ExtractedMonth, ExtractedField } from '@/types';
+import { detectPayslipPattern, extractPattern1a } from '@/lib/extraction-patterns';
 
 // Configure PDF.js worker - use unpkg CDN which has all versions
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
 
-// Regex patterns for payslip data extraction
-const patterns = {
-  name: /(?:nome|funcionário|empregado)[:\s]*([A-ZÀ-Ú\s]+)/i,
-  cnpj: /(?:CNPJ)[:\s]*([\d./-]+)/i,
-  cpf: /(?:CPF)[:\s]*([\d./-]+)/i,
-  month: /(?:competência|referência|mês|período)[:\s]*(\d{2}\/\d{4}|\w+\/\d{4}|\d{2}-\d{4})/i,
-  salaryBase: /(?:salário\s*base|sal\.\s*base|salario)[:\s]*([\d.,]+)/i,
-  grossTotal: /(?:total\s*(?:de\s*)?vencimentos|bruto|total\s*proventos)[:\s]*([\d.,]+)/i,
-  netTotal: /(?:líquido|valor\s*líquido|total\s*líquido)[:\s]*([\d.,]+)/i,
-  inss: /(?:INSS|contribuição\s*previdenciária)[:\s]*([\d.,]+)/i,
-  irrf: /(?:IRRF|imposto\s*de\s*renda)[:\s]*([\d.,]+)/i,
-  fgts: /(?:FGTS|fundo\s*de\s*garantia)[:\s]*([\d.,]+)/i,
-  discounts: /(?:total\s*(?:de\s*)?descontos|descontos)[:\s]*([\d.,]+)/i,
-};
+// ============================================================
+// Generic extraction (fallback for unrecognized patterns)
+// ============================================================
 
-// Extract key-value pairs from text using patterns
 const extractFieldsFromText = (text: string): ExtractedField[] => {
   const fields: ExtractedField[] = [];
   
-  // Common payslip fields to look for
   const fieldPatterns: { key: string; pattern: RegExp }[] = [
     { key: 'Salário Base', pattern: /(?:salário\s*base|sal\.\s*base)[:\s]*([\d.,]+)/i },
     { key: 'Horas Extras', pattern: /(?:horas?\s*extras?|h\.?\s*extras?)[:\s]*([\d.,]+)/i },
@@ -47,7 +35,6 @@ const extractFieldsFromText = (text: string): ExtractedField[] => {
     { key: '13º Salário', pattern: /(?:13º?\s*salário|décimo\s*terceiro)[:\s]*([\d.,]+)/i },
   ];
   
-  // Try to extract each field
   fieldPatterns.forEach(({ key, pattern }) => {
     const match = text.match(pattern);
     if (match && match[1]) {
@@ -55,7 +42,6 @@ const extractFieldsFromText = (text: string): ExtractedField[] => {
     }
   });
   
-  // Also try to extract tabular data (rubric code, description, value pattern)
   const tablePattern = /(\d{3,4})\s+([A-ZÀ-Ú\s.]+)\s+([\d.,]+)/gi;
   let tableMatch;
   while ((tableMatch = tablePattern.exec(text)) !== null) {
@@ -69,7 +55,6 @@ const extractFieldsFromText = (text: string): ExtractedField[] => {
   return fields;
 };
 
-// Detect document type based on content
 const detectDocumentType = (text: string): ExtractedData['documentType'] => {
   const lowerText = text.toLowerCase();
   
@@ -77,7 +62,6 @@ const detectDocumentType = (text: string): ExtractedData['documentType'] => {
     return 'termo_rescisao';
   }
   
-  // Check for multiple months (annual report)
   const monthPattern = /(?:jan|fev|mar|abr|mai|jun|jul|ago|set|out|nov|dez|\d{2})[\/-]\d{4}/gi;
   const months = text.match(monthPattern);
   
@@ -88,38 +72,30 @@ const detectDocumentType = (text: string): ExtractedData['documentType'] => {
   return 'holerite_normal';
 };
 
-// Extract employee name
 const extractEmployeeName = (text: string): string => {
-  const match = text.match(patterns.name);
+  const match = text.match(/(?:nome|funcionário|empregado)[:\s]*([A-ZÀ-Ú\s]+)/i);
   return match ? match[1].trim() : '';
 };
 
-// Extract CNPJ
 const extractCNPJ = (text: string): string => {
-  const match = text.match(patterns.cnpj);
+  const match = text.match(/(?:CNPJ)[:\s]*([\d./-]+)/i);
   return match ? match[1].trim() : '';
 };
 
-// Extract month/period
 const extractMonth = (text: string): string => {
-  const match = text.match(patterns.month);
-  if (match) {
-    return match[1].trim();
-  }
+  const match = text.match(/(?:competência|referência|mês|período)[:\s]*(\d{2}\/\d{4}|\w+\/\d{4}|\d{2}-\d{4})/i);
+  if (match) return match[1].trim();
   
-  // Try to find any month pattern
   const monthPattern = /(?:jan(?:eiro)?|fev(?:ereiro)?|mar(?:ço)?|abr(?:il)?|mai(?:o)?|jun(?:ho)?|jul(?:ho)?|ago(?:sto)?|set(?:embro)?|out(?:ubro)?|nov(?:embro)?|dez(?:embro)?)[\/\-]?\s*\d{4}/i;
   const monthMatch = text.match(monthPattern);
   return monthMatch ? monthMatch[0].trim() : 'Não identificado';
 };
 
-// PDF Text Extraction
-export const extractDataFromPDF = async (base64Data: string): Promise<ExtractedData> => {
-  const months: ExtractedMonth[] = [];
-  let employeeName = '';
-  let cnpj = '';
-  let documentType: ExtractedData['documentType'] = 'holerite_normal';
-  
+// ============================================================
+// PDF Text Extraction (routes to pattern or generic)
+// ============================================================
+
+export const extractDataFromPDF = async (base64Data: string, forcedPattern?: string): Promise<ExtractedData> => {
   try {
     // Convert base64 to array buffer
     const pdfData = base64Data.split(',')[1];
@@ -129,26 +105,56 @@ export const extractDataFromPDF = async (base64Data: string): Promise<ExtractedD
       bytes[i] = binaryString.charCodeAt(i);
     }
     
-    // Load PDF
+    // Load PDF and extract text from all pages
     const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
     const numPages = pdf.numPages;
+    const pageTexts: string[] = [];
     
-    // Extract text from each page
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
       const textContent = await page.getTextContent();
-      const text = textContent.items
-        .map((item: any) => item.str)
-        .join(' ');
+      const text = textContent.items.map((item: any) => item.str).join(' ');
+      pageTexts.push(text);
+    }
+    
+    // Detect or use forced pattern
+    const pattern = forcedPattern && forcedPattern !== 'auto'
+      ? forcedPattern
+      : detectPayslipPattern(pageTexts[0] || '');
+    
+    // Route to pattern-specific extractor
+    if (pattern === '1a') {
+      const result = extractPattern1a(pageTexts);
       
-      // First page - extract header info
-      if (pageNum === 1) {
+      if (result.months.length === 0 || result.months.every(m => m.fields.length === 0)) {
+        return extractDataFromImage(base64Data);
+      }
+      
+      return {
+        employeeName: result.employeeName,
+        cnpj: result.cnpj,
+        documentType: 'holerite_normal',
+        payslipPattern: '1a',
+        months: result.months,
+        extractedAt: new Date().toISOString(),
+      };
+    }
+    
+    // Generic extraction (fallback)
+    const months: ExtractedMonth[] = [];
+    let employeeName = '';
+    let cnpj = '';
+    let documentType: ExtractedData['documentType'] = 'holerite_normal';
+    
+    for (let i = 0; i < pageTexts.length; i++) {
+      const text = pageTexts[i];
+      
+      if (i === 0) {
         employeeName = extractEmployeeName(text);
         cnpj = extractCNPJ(text);
         documentType = detectDocumentType(text);
       }
       
-      // Extract fields for this page
       const fields = extractFieldsFromText(text);
       const month = extractMonth(text);
       
@@ -157,26 +163,29 @@ export const extractDataFromPDF = async (base64Data: string): Promise<ExtractedD
       }
     }
     
-    // If no text was found, it might be a scanned PDF - try OCR
     if (months.length === 0 || months.every(m => m.fields.length === 0)) {
       return extractDataFromImage(base64Data);
     }
+    
+    return {
+      employeeName,
+      cnpj,
+      documentType,
+      payslipPattern: pattern !== 'generic' ? pattern : undefined,
+      months,
+      extractedAt: new Date().toISOString(),
+    };
     
   } catch (error) {
     console.error('PDF extraction error:', error);
     throw error;
   }
-  
-  return {
-    employeeName,
-    cnpj,
-    documentType,
-    months,
-    extractedAt: new Date().toISOString(),
-  };
 };
 
+// ============================================================
 // Image OCR Extraction
+// ============================================================
+
 export const extractDataFromImage = async (base64Data: string): Promise<ExtractedData> => {
   const months: ExtractedMonth[] = [];
   let employeeName = '';

@@ -31,6 +31,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
   const { toast } = useToast();
   const [docName, setDocName] = useState('');
   const [docDescription, setDocDescription] = useState('');
+  const [payslipPattern, setPayslipPattern] = useState('auto');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadMode, setUploadMode] = useState<'new' | 'existing'>('new');
   const [selectedDocId, setSelectedDocId] = useState<string>('');
@@ -41,6 +42,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
     if (!open) {
       setDocName('');
       setDocDescription('');
+      setPayslipPattern('auto');
       setUploadMode('new');
       setSelectedDocId('');
     }
@@ -141,6 +143,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
           userId,
           name: docName,
           description: docDescription,
+          payslipPattern: payslipPattern !== 'auto' ? payslipPattern : undefined,
           files: docFiles,
           extractedData: null,
           status: 'pending',
@@ -255,6 +258,22 @@ const UploadModal: React.FC<UploadModalProps> = ({
                   onChange={(e) => setDocDescription(e.target.value)}
                   rows={3}
                 />
+              </div>
+
+              <div className="space-y-2">
+                <Label>Modelo do Holerite</Label>
+                <Select value={payslipPattern} onValueChange={setPayslipPattern}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o modelo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="auto">Auto-detectar</SelectItem>
+                    <SelectItem value="1a">1a - Holerite Normal (Folha Mensal)</SelectItem>
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Selecione o modelo para extração mais precisa ou deixe em auto-detectar.
+                </p>
               </div>
             </>
           )}
