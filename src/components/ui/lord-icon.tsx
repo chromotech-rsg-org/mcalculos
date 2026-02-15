@@ -42,7 +42,7 @@ export const LORDICON_URLS = {
   send: 'https://cdn.lordicon.com/ternnbni.json',
   arrowLeft: 'https://cdn.lordicon.com/zmkotitn.json',
   alert: 'https://cdn.lordicon.com/usownftb.json',
-  download: 'https://cdn.lordicon.com/gmzxduhd.json',
+  download: 'https://cdn.lordicon.com/mpjkzmol.json',
   login: 'https://cdn.lordicon.com/hrjifpbq.json',
 } as const;
 
