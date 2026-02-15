@@ -89,13 +89,15 @@ const UploadModal: React.FC<UploadModalProps> = ({
       }
     }
 
-    // Check storage
+    // Check storage - estimate if new files will fit
     const storage = getStorageUsage();
-    if (storage.percentage > 90) {
+    const estimatedNewSize = files.reduce((acc, f) => acc + f.size * 1.37, 0); // base64 overhead ~37%
+    const estimatedTotal = storage.used + estimatedNewSize;
+    if (estimatedTotal > storage.max * 0.95) {
       toast({
         variant: 'destructive',
-        title: 'Armazenamento cheio',
-        description: 'O armazenamento local está quase cheio. Exclua alguns documentos.',
+        title: 'Armazenamento insuficiente',
+        description: `Espaço necessário: ~${(estimatedNewSize / 1024 / 1024).toFixed(1)}MB. Disponível: ~${((storage.max - storage.used) / 1024 / 1024).toFixed(1)}MB. Exclua alguns documentos.`,
       });
       return;
     }
@@ -164,10 +166,14 @@ const UploadModal: React.FC<UploadModalProps> = ({
       setFiles([]);
       onSuccess(targetDocId);
     } catch (error) {
+      console.error('Upload error details:', error);
+      const isQuota = error instanceof DOMException && error.name === 'QuotaExceededError';
       toast({
         variant: 'destructive',
-        title: 'Erro no upload',
-        description: 'Ocorreu um erro ao processar os arquivos.',
+        title: isQuota ? 'Armazenamento cheio' : 'Erro no upload',
+        description: isQuota 
+          ? 'O armazenamento local está cheio. Exclua documentos antigos para liberar espaço.'
+          : (error instanceof Error ? error.message : 'Ocorreu um erro ao processar os arquivos.'),
       });
     }
 
