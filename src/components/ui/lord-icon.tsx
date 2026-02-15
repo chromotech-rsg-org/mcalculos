@@ -38,7 +38,7 @@ export const LORDICON_URLS = {
   save: 'https://cdn.lordicon.com/hqymfzvj.json',
   user: 'https://cdn.lordicon.com/dxjqoygy.json',
   shield: 'https://cdn.lordicon.com/nocovwne.json',
-  eye: 'https://cdn.lordicon.com/fmjvulow.json',
+  eye: 'https://cdn.lordicon.com/tdrtiskw.json',
   send: 'https://cdn.lordicon.com/ternnbni.json',
   arrowLeft: 'https://cdn.lordicon.com/zmkotitn.json',
   alert: 'https://cdn.lordicon.com/usownftb.json',
