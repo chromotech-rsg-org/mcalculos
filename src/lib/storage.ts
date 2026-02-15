@@ -116,7 +116,7 @@ export const getStorageUsage = (): { used: number; max: number; percentage: numb
       total += localStorage.getItem(key)?.length || 0;
     }
   }
-  const maxSize = 5 * 1024 * 1024; // ~5MB
+  const maxSize = 10 * 1024 * 1024; // ~10MB (browsers typically support 5-10MB)
   return {
     used: total,
     max: maxSize,
