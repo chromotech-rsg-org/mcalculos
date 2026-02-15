@@ -20,11 +20,22 @@ export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) =>
   });
 
   useEffect(() => {
-    // Initialize default admin user
-    initializeDefaultUsers();
-    
-    const savedState = getAuthState();
-    setAuthStateLocal(savedState);
+    try {
+      // Initialize default admin user
+      initializeDefaultUsers();
+      
+      const savedState = getAuthState();
+      setAuthStateLocal(savedState);
+    } catch (error) {
+      console.error('Error initializing auth:', error);
+      // If localStorage is corrupted/full, start fresh
+      try {
+        clearAuth();
+      } catch (e) {
+        // ignore
+      }
+      setAuthStateLocal({ isLoggedIn: false, currentUser: null });
+    }
   }, []);
 
   const login = (email: string, _password: string): { success: boolean; message: string } => {

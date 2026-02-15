@@ -8,8 +8,13 @@ const STORAGE_KEYS = {
 
 // Auth Storage
 export const getAuthState = (): AuthState => {
-  const data = localStorage.getItem(STORAGE_KEYS.AUTH);
-  return data ? JSON.parse(data) : { isLoggedIn: false, currentUser: null };
+  try {
+    const data = localStorage.getItem(STORAGE_KEYS.AUTH);
+    return data ? JSON.parse(data) : { isLoggedIn: false, currentUser: null };
+  } catch (error) {
+    console.error('Error reading auth state:', error);
+    return { isLoggedIn: false, currentUser: null };
+  }
 };
 
 export const setAuthState = (state: AuthState): void => {
@@ -73,11 +78,15 @@ export const getUserById = (userId: string): User | undefined => {
 
 // Initialize admin user if not exists
 export const initializeDefaultUsers = (): void => {
-  const users = getUsers();
-  const adminExists = users.some(u => u.email === DEFAULT_ADMIN.email);
-  if (!adminExists) {
-    users.push(DEFAULT_ADMIN);
-    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+  try {
+    const users = getUsers();
+    const adminExists = users.some(u => u.email === DEFAULT_ADMIN.email);
+    if (!adminExists) {
+      users.push(DEFAULT_ADMIN);
+      localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+    }
+  } catch (error) {
+    console.error('Error initializing default users:', error);
   }
 };
 
