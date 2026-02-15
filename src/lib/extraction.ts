@@ -1,7 +1,8 @@
 import * as pdfjsLib from 'pdfjs-dist';
 import Tesseract from 'tesseract.js';
 import { ExtractedData, ExtractedMonth, ExtractedField } from '@/types';
-import { detectPayslipPattern, extractPattern1a } from '@/lib/extraction-patterns';
+import { detectPayslipPattern, extractPattern1a, extractTextItems, flattenItems } from '@/lib/extraction-patterns';
+import type { TextItem } from '@/lib/extraction-patterns';
 
 // Configure PDF.js worker - use unpkg CDN which has all versions
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
@@ -105,16 +106,17 @@ export const extractDataFromPDF = async (base64Data: string, forcedPattern?: str
       bytes[i] = binaryString.charCodeAt(i);
     }
     
-    // Load PDF and extract text from all pages
+    // Load PDF and extract text items with coordinates from all pages
     const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
     const numPages = pdf.numPages;
+    const pageItems: TextItem[][] = [];
     const pageTexts: string[] = [];
     
     for (let pageNum = 1; pageNum <= numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
-      const textContent = await page.getTextContent();
-      const text = textContent.items.map((item: any) => item.str).join(' ');
-      pageTexts.push(text);
+      const items = await extractTextItems(page);
+      pageItems.push(items);
+      pageTexts.push(flattenItems(items));
     }
     
     // Detect or use forced pattern
@@ -122,9 +124,9 @@ export const extractDataFromPDF = async (base64Data: string, forcedPattern?: str
       ? forcedPattern
       : detectPayslipPattern(pageTexts[0] || '');
     
-    // Route to pattern-specific extractor
+    // Route to pattern-specific extractor (uses positional items)
     if (pattern === '1a') {
-      const result = extractPattern1a(pageTexts);
+      const result = extractPattern1a(pageItems);
       
       if (result.months.length === 0 || result.months.every(m => m.fields.length === 0)) {
         return extractDataFromImage(base64Data);
@@ -140,7 +142,7 @@ export const extractDataFromPDF = async (base64Data: string, forcedPattern?: str
       };
     }
     
-    // Generic extraction (fallback)
+    // Generic extraction (fallback) - uses flat text
     const months: ExtractedMonth[] = [];
     let employeeName = '';
     let cnpj = '';
