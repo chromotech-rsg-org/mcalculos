@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2 } from 'lucide-react';
+import { Loader2, Eye } from 'lucide-react';
 import LordIcon from '@/components/ui/lord-icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -298,7 +298,7 @@ const Documents: React.FC = () => {
                         navigate(`/documents/${doc.id}`);
                       }}
                     >
-                      <LordIcon icon="eye" size={20} trigger="hover" colors={{ primary: '#0d9668', secondary: '#0d9668' }} />
+                      <Eye className="h-5 w-5 text-primary" />
                     </Button>
                     <Button
                       variant="ghost"
