@@ -1,4 +1,5 @@
 import { ExtractedMonth, PayslipEvent } from '@/types';
+import { TextItem, LayoutLine, groupIntoLines, findColumnX, classifyValueColumn } from './pdf-layout';
 
 export interface Pattern1aResult {
   employeeName: string;
@@ -20,268 +21,384 @@ const MONTH_LABELS: Record<string, string> = {
   'outubro': 'Outubro', 'novembro': 'Novembro', 'dezembro': 'Dezembro',
 };
 
-const extractPeriod = (text: string): { period: string; competencia: string; tipoFolha: string } => {
-  // Match "Folha Mensal" or similar type
-  const tipoMatch = text.match(/Folha\s+(Mensal|Complementar|[A-Za-zÀ-ú]+)/i);
-  const tipoFolha = tipoMatch ? tipoMatch[0].trim() : 'Mensalista';
+// ======== Block extractors ========
 
-  // Match month/year: "Marco de 2022"
-  const match = text.match(
-    /(?:Folha\s+\w+[\s\S]*?)?(?:Mensalista|Horista|Quinzenalista)?\s*((?:Janeiro|Fevereiro|Mar[cç]o|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s+de\s+\d{4})/i
-  );
-  if (match) {
-    const parts = match[1].trim().split(/\s+de\s+/i);
-    if (parts.length === 2) {
-      const monthKey = parts[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+const extractHeader = (lines: LayoutLine[]): {
+  empresa: string; cnpj: string; centroCusto: string;
+  tipoFolha: string; competencia: string; period: string; folhaNumero: string;
+} => {
+  const result = { empresa: '', cnpj: '', centroCusto: '', tipoFolha: '', competencia: '', period: '', folhaNumero: '' };
+  
+  // First ~5 lines contain header info
+  const headerLines = lines.slice(0, Math.min(6, lines.length));
+  
+  for (const line of headerLines) {
+    const text = line.text;
+    
+    // Empresa: first line usually
+    if (!result.empresa && !text.match(/CNPJ|Codigo|Folha|Mensalista/i)) {
+      result.empresa = text.trim();
+    }
+    
+    // CNPJ
+    const cnpjMatch = text.match(/CNPJ[:\s]*([\d./-]+)/i);
+    if (cnpjMatch) result.cnpj = cnpjMatch[1].trim();
+    
+    // Centro de Custo
+    const ccMatch = text.match(/CC[:\s]*([A-ZÀ-Úa-zà-ú\s]+?)(?:\s+Folha|\s*$)/i);
+    if (ccMatch) result.centroCusto = ccMatch[1].trim();
+    
+    // Tipo Folha
+    if (/Folha\s+(Mensal|Complementar)/i.test(text)) {
+      const m = text.match(/Folha\s+(Mensal|Complementar|\w+)/i);
+      if (m) result.tipoFolha = m[0].trim();
+    }
+    if (/Mensalista/i.test(text) && !result.tipoFolha) {
+      result.tipoFolha = 'Mensalista';
+    }
+    
+    // Competencia (month/year)
+    const compMatch = text.match(/(Janeiro|Fevereiro|Mar[cç]o|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s+de\s+(\d{4})/i);
+    if (compMatch) {
+      const monthKey = compMatch[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const monthNum = MONTH_NAMES[monthKey] || '??';
-      const label = MONTH_LABELS[monthKey] || parts[0];
-      return {
-        period: `${monthNum}/${parts[1]}`,
-        competencia: `${label} de ${parts[1]}`,
-        tipoFolha,
-      };
+      const label = MONTH_LABELS[monthKey] || compMatch[1];
+      result.competencia = `${label} de ${compMatch[2]}`;
+      result.period = `${monthNum}/${compMatch[2]}`;
     }
-    return { period: match[1].trim(), competencia: match[1].trim(), tipoFolha };
+    
+    // Folha numero
+    const folhaNumMatch = text.match(/(?:Folha\s+\w+\s+.*?)(\d{2,4})\s+\d{3}\s+[A-Z]/i);
+    if (folhaNumMatch) result.folhaNumero = folhaNumMatch[1];
   }
-  return { period: 'Não identificado', competencia: 'Não identificado', tipoFolha };
-};
-
-const extractEmployeeInfo = (text: string): {
-  codigo: string; nome: string; cbo: string; departamento: string; filial: string;
-} => {
-  // Pattern: 3-digit code + NAME IN CAPS + 6-digit CBO + dept + filial
-  const match = text.match(/\b(\d{3})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s]{3,}?)\s+(\d{6})\s+(\d+)\s+(\d+)\b/);
-  if (match) {
-    return {
-      codigo: match[1],
-      nome: match[2].trim(),
-      cbo: match[3],
-      departamento: match[4],
-      filial: match[5],
-    };
-  }
-  // Fallback: just name
-  const nameMatch = text.match(/\b(\d{3})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s]{3,}?)\s+\d{6}\b/);
-  return {
-    codigo: nameMatch ? nameMatch[1] : '',
-    nome: nameMatch ? nameMatch[2].trim() : '',
-    cbo: '', departamento: '', filial: '',
-  };
-};
-
-const extractCargo = (text: string): string => {
-  // Cargo appears after employee line, before "Admissao"
-  const match = text.match(/\d{6}\s+\d+\s+\d+\s+([A-ZÀ-Ú][A-ZÀ-Ú\s.]+?)\s+Admiss/i);
-  return match ? match[1].trim() : '';
-};
-
-const extractDataAdmissao = (text: string): string => {
-  const match = text.match(/Admiss[aã]o[:\s]*(\d{2}\/\d{2}\/\d{4})/i);
-  return match ? match[1] : '';
-};
-
-const extractEmpresaName = (text: string): string => {
-  // Take text before CNPJ
-  const match = text.match(/^([\s\S]*?)CNPJ/i);
-  if (match) {
-    // Clean up - take the last meaningful line before CNPJ
-    const parts = match[1].trim().split(/\s{3,}/);
-    return parts[parts.length - 1]?.trim() || match[1].trim().substring(0, 80);
-  }
-  return '';
-};
-
-const extractCNPJ = (text: string): string => {
-  const match = text.match(/CNPJ[:\s]*([\d./-]+)/i);
-  return match ? match[1].trim() : '';
-};
-
-const extractCentroCusto = (text: string): string => {
-  const match = text.match(/CC[:\s]*([A-ZÀ-Úa-zà-ú\s]+?)(?:\s+Folha|\s+\d)/i);
-  return match ? match[1].trim() : '';
-};
-
-const extractFolhaNumero = (text: string): string => {
-  const match = text.match(/Folha\s+(?:Mensal|Complementar|\w+)\s+.*?\b(\d{2,4})\s+\d{3}\s+[A-Z]/i);
-  // Try another pattern: look for a number between tipo folha info and employee code
-  const match2 = text.match(/Mensalista\s+.*?(?:de\s+\d{4})\s+(\d{2,4})\s+\d{3}/i);
-  return match ? match[1] : (match2 ? match2[1] : '');
-};
-
-const extractTableEvents = (text: string): PayslipEvent[] => {
-  const events: PayslipEvent[] = [];
-
-  // Match rubric lines: code (3-4 digits) + description + reference + value(s)
-  const rubricPattern = /\b(\d{3,4})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s.%\/c]{2,}?)\s+([\d.,]+)\s+([\d.,]+)/g;
-  let match;
   
-  while ((match = rubricPattern.exec(text)) !== null) {
-    const codigo = match[1];
-    const descricao = match[2].trim();
-    const referencia = match[3].trim();
-    const valor = match[4].trim();
+  return result;
+};
+
+const extractEmployee = (lines: LayoutLine[]): {
+  codigo: string; nome: string; cbo: string; departamento: string;
+  filial: string; cargo: string; dataAdmissao: string;
+} => {
+  const result = { codigo: '', nome: '', cbo: '', departamento: '', filial: '', cargo: '', dataAdmissao: '' };
+
+  // Find the line containing "Codigo" and "Descricao" header (table header)
+  // Employee info is between header block and table header
+  let tableHeaderIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/C[oó]digo/i.test(lines[i].text) && /Descri[cç][aã]o/i.test(lines[i].text)) {
+      tableHeaderIdx = i;
+      break;
+    }
+  }
+  
+  // Employee data is typically lines 3-5 (after company header)
+  // Look for the line with a 3-digit code followed by uppercase name
+  const searchEnd = tableHeaderIdx > 0 ? tableHeaderIdx : Math.min(10, lines.length);
+  
+  for (let i = 2; i < searchEnd; i++) {
+    const line = lines[i];
+    const text = line.text;
     
-    if (/^\d+$/.test(descricao)) continue;
-    
-    // Determine if it's vencimento or desconto based on context
-    // For now, check if there's a 5th capture (second value = desconto)
-    // We'll also check for a trailing value
-    const afterMatch = text.substring(match.index + match[0].length).match(/^\s+([\d.,]+)/);
-    
-    if (afterMatch) {
-      // Has two values: vencimento + desconto
-      events.push({
-        codigo,
-        descricao,
-        referencia,
-        vencimento: valor,
-        desconto: afterMatch[1],
-      });
-    } else {
-      // Single value - need to determine if vencimento or desconto
-      // Heuristic: common discount codes
-      const isDesconto = ['998', '871', '981', '217', '783', '784', '999'].includes(codigo) ||
-        descricao.toLowerCase().includes('desconto') ||
-        descricao.toLowerCase().includes('i.n.s.s') ||
-        descricao.toLowerCase().includes('vale transporte');
+    // Line with employee code + name + CBO: "001 NOME COMPLETO 123456 1 1"
+    const empMatch = text.match(/\b(\d{3})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s]{3,}?)\s+(\d{6})\b/);
+    if (empMatch) {
+      result.codigo = empMatch[1];
+      result.nome = empMatch[2].trim();
+      result.cbo = empMatch[3];
       
-      events.push({
-        codigo,
-        descricao,
-        referencia,
-        vencimento: isDesconto ? '0' : valor,
-        desconto: isDesconto ? valor : '0',
-      });
+      // After CBO there may be departamento and filial
+      const afterCbo = text.substring(text.indexOf(empMatch[3]) + empMatch[3].length).trim();
+      const deptFilMatch = afterCbo.match(/^(\d+)\s+(\d+)/);
+      if (deptFilMatch) {
+        result.departamento = deptFilMatch[1];
+        result.filial = deptFilMatch[2];
+      }
+    }
+    
+    // Line with cargo + admissão
+    const admMatch = text.match(/Admiss[aã]o[:\s]*(\d{2}\/\d{2}\/\d{4})/i);
+    if (admMatch) {
+      result.dataAdmissao = admMatch[1];
+      // Cargo is text before "Admissao"
+      const cargoText = text.substring(0, text.search(/Admiss[aã]o/i)).trim();
+      if (cargoText) {
+        // Remove leading numbers if any
+        result.cargo = cargoText.replace(/^\d+\s+/, '').trim();
+      }
     }
   }
-
-  return events;
-};
-
-const extractTotals = (text: string): {
-  totalVencimentos: string; totalDescontos: string; valorLiquido: string;
-} => {
-  const totalVenc = text.match(/Total\s+de\s+Vencimentos\s+([\d.,]+)/i);
-  const totalDesc = text.match(/Total\s+de\s+Descontos\s+([\d.,]+)/i);
-  const valorLiq = text.match(/Valor\s+L[ií]quido\s+([\d.,]+)/i);
   
-  return {
-    totalVencimentos: totalVenc ? totalVenc[1] : '',
-    totalDescontos: totalDesc ? totalDesc[1] : '',
-    valorLiquido: valorLiq ? valorLiq[1] : '',
-  };
+  return result;
 };
 
-const extractFooter = (text: string): {
+const extractEvents = (lines: LayoutLine[]): {
+  eventos: PayslipEvent[];
+  totalVencimentos: string;
+  totalDescontos: string;
+  valorLiquido: string;
+} => {
+  const eventos: PayslipEvent[] = [];
+  let totalVencimentos = '';
+  let totalDescontos = '';
+  let valorLiquido = '';
+  
+  // Find table header line
+  let headerIdx = -1;
+  let vencX: number | null = null;
+  let descX: number | null = null;
+  let refX: number | null = null;
+  
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i].text;
+    if (/C[oó]digo/i.test(text) && /Descri[cç][aã]o/i.test(text) && /Vencimentos/i.test(text)) {
+      headerIdx = i;
+      vencX = findColumnX(lines[i], 'Vencimentos');
+      descX = findColumnX(lines[i], 'Descontos');
+      refX = findColumnX(lines[i], 'Refer');
+      break;
+    }
+  }
+  
+  if (headerIdx < 0 || vencX === null || descX === null) {
+    return { eventos, totalVencimentos, totalDescontos, valorLiquido };
+  }
+  
+  // Process lines after the header until totals
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const line = lines[i];
+    const text = line.text;
+    
+    // Check for totals
+    if (/Total\s+de\s+Vencimentos/i.test(text)) {
+      const vals = line.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+      for (const v of vals) {
+        const col = classifyValueColumn(v.x + v.width / 2, vencX!, descX!);
+        if (col === 'vencimento') totalVencimentos = v.str.trim();
+        else totalDescontos = v.str.trim();
+      }
+      continue;
+    }
+    
+    if (/Total\s+de\s+Descontos/i.test(text)) {
+      const vals = line.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+      for (const v of vals) {
+        totalDescontos = v.str.trim();
+      }
+      continue;
+    }
+    
+    if (/Valor\s+L[ií]quido/i.test(text)) {
+      const vals = line.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+      if (vals.length > 0) valorLiquido = vals[vals.length - 1].str.trim();
+      continue;
+    }
+    
+    // Stop at footer labels
+    if (/Sal[aá]rio\s+Base/i.test(text) || /Sal\.\s*Contr/i.test(text)) break;
+    
+    // Parse event line: starts with 3-4 digit code
+    const codeItem = line.items.find(it => /^\d{3,4}$/.test(it.str.trim()));
+    if (!codeItem) continue;
+    
+    const codigo = codeItem.str.trim();
+    
+    // Description: text items after code but before numeric values
+    const descItems: string[] = [];
+    const numericItems: TextItem[] = [];
+    let passedCode = false;
+    
+    for (const item of line.items) {
+      if (item === codeItem) { passedCode = true; continue; }
+      if (!passedCode) continue;
+      
+      const val = item.str.trim();
+      if (/^[\d.,]+$/.test(val) && val.length >= 2) {
+        numericItems.push(item);
+      } else if (numericItems.length === 0) {
+        // Still in description zone
+        descItems.push(val);
+      } else {
+        // Text after numbers (shouldn't happen normally)
+        numericItems.push(item);
+      }
+    }
+    
+    const descricao = descItems.join(' ').trim();
+    if (!descricao) continue;
+    
+    // Classify numeric values
+    let referencia = '';
+    let vencimento = '0';
+    let desconto = '0';
+    
+    for (const ni of numericItems) {
+      const val = ni.str.trim();
+      const centerX = ni.x + ni.width / 2;
+      
+      // If it's near the reference column
+      if (refX !== null && Math.abs(centerX - refX) < Math.abs(centerX - vencX!) && Math.abs(centerX - refX) < Math.abs(centerX - descX!)) {
+        referencia = val;
+      } else {
+        const col = classifyValueColumn(centerX, vencX!, descX!);
+        if (col === 'vencimento') vencimento = val;
+        else desconto = val;
+      }
+    }
+    
+    eventos.push({ codigo, descricao, referencia, vencimento, desconto });
+  }
+  
+  return { eventos, totalVencimentos, totalDescontos, valorLiquido };
+};
+
+const extractFooter = (lines: LayoutLine[]): {
   salarioBase: string; baseInss: string; baseFgts: string;
   fgtsMes: string; baseIrrf: string; irrf: string;
 } => {
   const result = { salarioBase: '', baseInss: '', baseFgts: '', fgtsMes: '', baseIrrf: '', irrf: '' };
   
-  const footerMatch = text.match(
-    /Faixa\s+IRRF\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)/i
-  );
-  
-  if (footerMatch) {
-    result.salarioBase = footerMatch[1];
-    result.baseInss = footerMatch[2];
-    result.baseFgts = footerMatch[3];
-    result.fgtsMes = footerMatch[4];
-    result.baseIrrf = footerMatch[5];
-    result.irrf = footerMatch[6];
-    return result;
+  // Find line with footer labels
+  let labelIdx = -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (/Sal[aá]rio\s+Base/i.test(lines[i].text) && /Sal\.\s*Contr/i.test(lines[i].text)) {
+      labelIdx = i;
+      break;
+    }
   }
-
-  // Individual fallbacks
-  const salBase = text.match(/Sal[aá]rio\s+Base\s+([\d.,]+)/i);
-  if (salBase) result.salarioBase = salBase[1];
-  const salInss = text.match(/Sal\.\s*Contr\.\s*INSS\s+([\d.,]+)/i);
-  if (salInss) result.baseInss = salInss[1];
-  const baseFgts = text.match(/Base\s+Calc\.\s*FGTS\s+([\d.,]+)/i);
-  if (baseFgts) result.baseFgts = baseFgts[1];
-  const fgtsMes = text.match(/F\.?G\.?T\.?S\.?\s+do\s+M[eê]s\s+([\d.,]+)/i);
-  if (fgtsMes) result.fgtsMes = fgtsMes[1];
-  const baseIrrf = text.match(/Base\s+Calc\.\s*IRRF\s+([\d.,]+)/i);
-  if (baseIrrf) result.baseIrrf = baseIrrf[1];
-  const faixaIrrf = text.match(/Faixa\s+IRRF\s+([\d.,]+)/i);
-  if (faixaIrrf) result.irrf = faixaIrrf[1];
-
+  
+  if (labelIdx < 0) {
+    // Try single label
+    for (let i = 0; i < lines.length; i++) {
+      if (/Sal[aá]rio\s+Base/i.test(lines[i].text)) {
+        labelIdx = i;
+        break;
+      }
+    }
+  }
+  
+  if (labelIdx < 0) return result;
+  
+  // The values line is the next line after labels
+  // Or values may be on the same line
+  const labelLine = lines[labelIdx];
+  const nextLine = labelIdx + 1 < lines.length ? lines[labelIdx + 1] : null;
+  
+  // Collect all numeric values from the values line
+  const valueLine = nextLine || labelLine;
+  const values = valueLine.items
+    .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+    .sort((a, b) => a.x - b.x);
+  
+  // Map positionally: Salário Base, Base INSS, Base FGTS, FGTS Mês, Base IRRF, Faixa IRRF
+  if (values.length >= 1) result.salarioBase = values[0].str.trim();
+  if (values.length >= 2) result.baseInss = values[1].str.trim();
+  if (values.length >= 3) result.baseFgts = values[2].str.trim();
+  if (values.length >= 4) result.fgtsMes = values[3].str.trim();
+  if (values.length >= 5) result.baseIrrf = values[4].str.trim();
+  if (values.length >= 6) result.irrf = values[5].str.trim();
+  
   return result;
 };
 
-const extractBankInfo = (text: string): { banco: string; agencia: string; contaCorrente: string } => {
-  // Pattern: bank name + agency number + account number near end
-  const match = text.match(/(Ita[uú]|Bradesco|Santander|Caixa|Banco\s+do\s+Brasil|BB|Sicoob|Sicredi|Nu[Bb]ank|Inter|C6)\s+(\d{3,5})\s+([\d.-]+)/i);
-  if (match) {
-    return { banco: match[1], agencia: match[2], contaCorrente: match[3] };
+const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string; contaCorrente: string } => {
+  const result = { banco: '', agencia: '', contaCorrente: '' };
+  
+  for (const line of lines) {
+    const text = line.text;
+    
+    // Look for bank name
+    const bankMatch = text.match(/(Ita[uú]|Bradesco|Santander|Caixa|Banco\s+do\s+Brasil|BB|Sicoob|Sicredi|Nu[Bb]ank|Inter|C6)/i);
+    if (bankMatch) {
+      result.banco = bankMatch[1];
+      
+      // Agencia and conta on same line or nearby items
+      const agMatch = text.match(/Ag[eê]ncia[:\s]*(\d{3,5})/i);
+      if (agMatch) result.agencia = agMatch[1];
+      
+      const contaMatch = text.match(/(?:Conta|CC)[:\s]*([\d.-]+)/i);
+      if (contaMatch) result.contaCorrente = contaMatch[1];
+      
+      // If no explicit labels, try numeric items after bank name
+      if (!result.agencia || !result.contaCorrente) {
+        const nums = line.items
+          .filter(it => /^[\d.-]+$/.test(it.str.trim()) && it.str.trim().length >= 3)
+          .sort((a, b) => a.x - b.x);
+        if (nums.length >= 2) {
+          if (!result.agencia) result.agencia = nums[0].str.trim();
+          if (!result.contaCorrente) result.contaCorrente = nums[1].str.trim();
+        } else if (nums.length === 1) {
+          if (!result.agencia) result.agencia = nums[0].str.trim();
+        }
+      }
+      
+      break;
+    }
   }
-  return { banco: '', agencia: '', contaCorrente: '' };
+  
+  return result;
 };
 
-/**
- * Extract data from a single page of a "1a" pattern payslip
- */
-export const extractPattern1aPage = (text: string): { month: ExtractedMonth; employeeName: string; cnpj: string } => {
-  const { period, competencia, tipoFolha } = extractPeriod(text);
-  const empInfo = extractEmployeeInfo(text);
-  const cnpj = extractCNPJ(text);
-  const empresa = extractEmpresaName(text);
-  const centroCusto = extractCentroCusto(text);
-  const folhaNumero = extractFolhaNumero(text);
-  const cargo = extractCargo(text);
-  const dataAdmissao = extractDataAdmissao(text);
-  const eventos = extractTableEvents(text);
-  const totals = extractTotals(text);
-  const footer = extractFooter(text);
-  const bank = extractBankInfo(text);
+// ======== Main entry points ========
 
+export const extractPattern1aPage = (items: TextItem[]): {
+  month: ExtractedMonth;
+  employeeName: string;
+  cnpj: string;
+} => {
+  const lines = groupIntoLines(items);
+  
+  const header = extractHeader(lines);
+  const emp = extractEmployee(lines);
+  const { eventos, totalVencimentos, totalDescontos, valorLiquido } = extractEvents(lines);
+  const footer = extractFooter(lines);
+  const bank = extractBankInfo(lines);
+  
   // Build legacy fields for backward compatibility
   const fields = eventos.map(e => ({
     key: e.descricao,
     value: e.vencimento !== '0' ? e.vencimento : e.desconto,
   }));
-  if (totals.totalVencimentos) fields.push({ key: 'Total de Vencimentos', value: totals.totalVencimentos });
-  if (totals.totalDescontos) fields.push({ key: 'Total de Descontos', value: totals.totalDescontos });
-  if (totals.valorLiquido) fields.push({ key: 'Valor Líquido', value: totals.valorLiquido });
+  if (totalVencimentos) fields.push({ key: 'Total de Vencimentos', value: totalVencimentos });
+  if (totalDescontos) fields.push({ key: 'Total de Descontos', value: totalDescontos });
+  if (valorLiquido) fields.push({ key: 'Valor Líquido', value: valorLiquido });
   if (footer.salarioBase) fields.push({ key: 'Salário Base', value: footer.salarioBase });
-
+  
   return {
     month: {
-      month: period,
+      month: header.period,
       fields,
-      empresa,
-      cnpj,
-      centroCusto,
-      tipoFolha,
-      competencia,
-      folhaNumero,
-      codigoFuncionario: empInfo.codigo,
-      nomeFuncionario: empInfo.nome,
-      cbo: empInfo.cbo,
-      departamento: empInfo.departamento,
-      filial: empInfo.filial,
-      cargo,
-      dataAdmissao,
+      empresa: header.empresa,
+      cnpj: header.cnpj,
+      centroCusto: header.centroCusto,
+      tipoFolha: header.tipoFolha,
+      competencia: header.competencia,
+      folhaNumero: header.folhaNumero,
+      codigoFuncionario: emp.codigo,
+      nomeFuncionario: emp.nome,
+      cbo: emp.cbo,
+      departamento: emp.departamento,
+      filial: emp.filial,
+      cargo: emp.cargo,
+      dataAdmissao: emp.dataAdmissao,
       eventos,
-      ...totals,
+      totalVencimentos,
+      totalDescontos,
+      valorLiquido,
       ...footer,
       ...bank,
     },
-    employeeName: empInfo.nome,
-    cnpj,
+    employeeName: emp.nome,
+    cnpj: header.cnpj,
   };
 };
 
-/**
- * Extract all pages from a "1a" pattern payslip PDF
- */
-export const extractPattern1a = (pages: string[]): Pattern1aResult => {
+export const extractPattern1a = (pagesItems: TextItem[][]): Pattern1aResult => {
   let employeeName = '';
   let cnpj = '';
   const months: ExtractedMonth[] = [];
   
-  for (const pageText of pages) {
-    const result = extractPattern1aPage(pageText);
+  for (const pageItems of pagesItems) {
+    const result = extractPattern1aPage(pageItems);
     
     if (result.employeeName && !employeeName) employeeName = result.employeeName;
     if (result.cnpj && !cnpj) cnpj = result.cnpj;
