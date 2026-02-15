@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Eye } from 'lucide-react';
+import { Loader2, Eye, Download } from 'lucide-react';
 import LordIcon from '@/components/ui/lord-icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -308,7 +308,7 @@ const Documents: React.FC = () => {
                         downloadFile(doc);
                       }}
                     >
-                      <LordIcon icon="download" size={20} trigger="hover" colors={{ primary: '#2563eb', secondary: '#2563eb' }} />
+                      <Download className="h-5 w-5 text-secondary" />
                     </Button>
                     <Button
                       variant="ghost"
