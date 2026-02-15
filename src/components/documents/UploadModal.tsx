@@ -93,7 +93,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
     const storage = getStorageUsage();
     const estimatedNewSize = files.reduce((acc, f) => acc + f.size * 1.37, 0); // base64 overhead ~37%
     const estimatedTotal = storage.used + estimatedNewSize;
-    if (estimatedTotal > storage.max * 0.95) {
+    if (estimatedTotal > storage.max * 0.98) {
       toast({
         variant: 'destructive',
         title: 'Armazenamento insuficiente',
