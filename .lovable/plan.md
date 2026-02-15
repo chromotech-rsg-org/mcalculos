@@ -1,160 +1,91 @@
 
 
-# Extraction by Payslip Pattern (Modelo "1a")
+# Correcao da Extracao do Modelo 1a - Abordagem por Layout Visual
 
-## Problem Analysis
+## Diagnostico do Problema
 
-The current extraction engine uses generic regex patterns that fail to capture the specific structure of each payslip model. After analyzing the uploaded PDF ("1a - Holerite Normal - A.L. IND COM"), I identified the following gaps:
+O pdf.js extrai texto como uma lista flat de items com coordenadas (x, y), mas o codigo atual junta tudo com `.join(' ')`, perdendo completamente a informacao de posicao. O resultado e uma string unica onde as regex nao conseguem distinguir colunas (Vencimentos vs Descontos), identificar blocos (cabecalho vs tabela vs rodape), nem separar o cargo dos eventos.
 
-**Current issues:**
-- **Period detection fails**: The code looks for keywords like "competencia/referencia/mes/periodo" but in model 1a the period is in "Folha Mensal" followed by "Marco de 2022" on the next text segment
-- **Employee name not captured**: The regex expects "nome/funcionario/empregado:" prefix, but in 1a the name is in a table row like "194 LUCAS PEREIRA GONCALVES"
-- **Table data poorly parsed**: The generic table regex `(\d{3,4})\s+([A-Z...]+)\s+([\d.,]+)` only captures one value per row, but 1a rows have both Referencia AND Vencimentos/Descontos columns
-- **Footer fields missed**: Salario Base, Sal. Contr. INSS, Base Calc. FGTS, F.G.T.S do Mes, Base Calc. IRRF, Faixa IRRF are in a separate footer row that the current code ignores
+Evidencia na screenshot: so 1 evento foi extraido, e e o cargo ("OP. DE SERRA E ESTICADEIRA JR.") confundido com evento. Campos como Nome, CBO, Departamento, Filial ficaram vazios.
 
-**Model 1a structure (per page = 1 month):**
+## Solucao
 
-```text
-HEADER:
-  Company Name
-  CNPJ: XX.XXX.XXX/XXXX-XX    CC: EXTRUSAO    Folha Mensal
-  Mensalista                                    [Mes] de [Ano]
-  Codigo | Nome do Funcionario | CBO | Depto | Filial
-  194      LUCAS PEREIRA GONCALVES   722415   1       1
-  OP. DE SERRA E ESTICADEIRA JR.  Admissao: 04/03/2022
+Reescrever a extracao para usar as coordenadas (x, y) dos text items do pdf.js, reconstruindo linhas e colunas pela posicao visual.
 
-TABLE (line items):
-  Codigo | Descricao              | Referencia | Vencimentos | Descontos
-  8781     DIAS NORMAIS             28,00        2.009,65
-  250      REFLEXO EXTRAS DSR       0,00         32,69
-  998      I.N.S.S.                 8,25                       199,63
-  217      VALE TRANSPORTE 6%       6,00                       120,58
+## Detalhes Tecnicos
 
-TOTALS:
-  Total de Vencimentos: 2.420,21
-  Total de Descontos: 1.325,21
-  Valor Liquido: 1.095,00
+### 1. Novo modulo de parsing posicional (`src/lib/extraction-patterns/pdf-layout.ts`)
 
-FOOTER:
-  Salario Base | Sal. Contr. INSS | Base Calc. FGTS | F.G.T.S do Mes | Base Calc. IRRF | Faixa IRRF
-  2.224,97       2.420,16           2.420,16           193,61            1.026,11           0,00
-```
+Criar funcoes utilitarias para reconstruir o layout:
 
-## Implementation Plan
+- **`extractTextItems(page)`**: Extrair items com `{str, x, y, width, height}` do pdf.js `getTextContent()` (campos `transform[4]` = x, `transform[5]` = y)
+- **`groupIntoLines(items)`**: Agrupar items por coordenada Y (tolerancia ~3px) e ordenar por X dentro de cada linha
+- **`reconstructLines(items)`**: Gerar array de linhas onde cada linha tem o texto completo e os items posicionais
 
-### 1. Add `payslipPattern` field to the data model
+### 2. Reescrever `pattern1a.ts` com parsing posicional
 
-Update `src/types/index.ts` to include a pattern identifier on `ExtractedData` and `Document`:
+Substituir todas as regex por logica baseada em blocos:
 
-- Add `payslipPattern?: string` to `ExtractedData` (e.g., "1a", "2a", "3a", etc.)
-- This lets the extraction engine choose the correct parsing strategy
+**Bloco 1 - Cabecalho (linhas 1-3 do PDF):**
+- Linha 1: Empresa (texto completo da primeira linha)
+- Linha 2: CNPJ (apos "CNPJ:"), CC (apos "CC:"), "Folha Mensal"
+- Linha 3: "Mensalista", Competencia (mes de ano)
 
-### 2. Create pattern-specific extraction module
+**Bloco 2 - Funcionario (linhas 4-5):**
+- Linha 4: Codigo (3 digitos), Nome (texto em maiusculas), CBO (6 digitos), Departamento, Filial
+- Linha 5: Cargo (texto antes de "Admissao:"), Data Admissao
 
-Create `src/lib/extraction-patterns/pattern1a.ts` with a dedicated extractor for model 1a:
+**Bloco 3 - Tabela de Eventos (linhas entre cabecalho de colunas e "Total de Vencimentos"):**
+- Detectar o cabecalho da tabela pela presenca de "Codigo", "Descricao", "Vencimentos", "Descontos"
+- Guardar as posicoes X das colunas Vencimentos e Descontos
+- Para cada linha seguinte ate os totais:
+  - Codigo: primeiro numero de 3-4 digitos
+  - Descricao: texto entre codigo e referencia
+  - Referencia: valor numerico na posicao X da coluna Referencia
+  - Vencimento/Desconto: determinar pelo X do valor -- se esta na zona da coluna "Vencimentos" e vencimento, senao e desconto
+- Isso resolve o problema principal: distinguir em qual coluna o valor esta
 
-**Period extraction**: Look for "Folha Mensal" followed by a month name pattern like "Marco de 2022" or "Maio de 2022"
+**Bloco 4 - Totais:**
+- Procurar linhas com "Total de Vencimentos" e "Total de Descontos"
+- Valor Liquido: apos "Valor Liquido"
 
-**Employee name**: Parse the line containing a 3-digit code followed by a name in all caps: `(\d{3})\s+([A-Z\s]+)`
+**Bloco 5 - Rodape financeiro (ultima linha com 6 valores numericos):**
+- Identificar a linha que contem "Salario Base", "Sal. Contr. INSS", etc.
+- A proxima linha tera os 6 valores na mesma ordem posicional
 
-**Table parsing**: Parse lines matching the pattern `Codigo | Descricao | Referencia | Vencimentos | Descontos` by:
-- Detecting numeric codes (3-4 digits) at start of line
-- Capturing description text
-- Capturing reference value
-- Distinguishing whether the monetary value goes in Vencimentos or Descontos column based on position
+**Bloco 6 - Dados bancarios:**
+- Procurar "ITAU", "conta corrente:", "Agencia:" nas linhas do rodape
+- Extrair banco, agencia e conta corrente respeitando a ordem
 
-**Footer parsing**: Capture the 6 footer fields by detecting the row after bank/account info:
-- Salario Base
-- Sal. Contr. INSS
-- Base Calc. FGTS
-- F.G.T.S do Mes
-- Base Calc. IRRF
-- Faixa IRRF
+### 3. Modificar `extractDataFromPDF` em `src/lib/extraction.ts`
 
-**Fields extracted per month** (columns in the output table):
-- DIAS NORMAIS (reference + value)
-- REFLEXO EXTRAS DSR
-- REFLEXO ADIC. NOTURNO DSR
-- HORAS EXTRAS 50%
-- HORAS EXTRAS 60%
-- HORA EXTRA 50% c/ADICIONAL NOTURNO 35%
-- HORA EXTRA 60% c/ADICIONAL NOTURNO 35%
-- TROCO DO MES
-- ADICIONAL NOTURNO 35%
-- I.N.S.S.
-- DESCONTO TROCO ADTO. SAL.
-- DESC.ADIANT.SALARIAL
-- VALE TRANSPORTE 6%
-- HORAS FALTAS PARCIAL
-- DESCONTO DE MERCADORIA
-- Total de Vencimentos
-- Total de Descontos
-- Valor Liquido
-- Salario Base
-- Sal. Contr. INSS
-- Base Calc. FGTS
-- F.G.T.S do Mes
-- Base Calc. IRRF
-- Faixa IRRF
+- Em vez de `textContent.items.map(item => item.str).join(' ')`, passar os items brutos com coordenadas para o pattern extractor
+- Criar duas versoes do texto por pagina:
+  1. `rawItems`: array de `{str, x, y}` para parsing posicional
+  2. `flatText`: string concatenada para deteccao de pattern (detector.ts)
 
-Each rubric that appears in any month becomes a column; months become rows.
+### 4. Ajustar `extractPattern1a` e `extractPattern1aPage`
 
-### 3. Create pattern detection logic
+- Receber `items: TextItem[]` em vez de `text: string`
+- Usar `groupIntoLines(items)` para reconstruir linhas
+- Detectar zonas de colunas pela posicao X dos cabecalhos da tabela
+- Cada evento recebe vencimento ou desconto com base na posicao X do valor
 
-Create `src/lib/extraction-patterns/detector.ts`:
+### Arquivos modificados
 
-- Auto-detect pattern "1a" by checking for "Folha Mensal" + the specific table header format (Codigo | Descricao | Referencia | Vencimentos | Descontos) + footer row with "Salario Base | Sal. Contr. INSS | ..."
-- Return the detected pattern string or "generic" as fallback
+| Arquivo | Alteracao |
+|---|---|
+| `src/lib/extraction-patterns/pdf-layout.ts` | Novo - funcoes de layout posicional |
+| `src/lib/extraction-patterns/pattern1a.ts` | Reescrito - usa items posicionais |
+| `src/lib/extraction-patterns/index.ts` | Exportar novos tipos |
+| `src/lib/extraction.ts` | Passar items posicionais ao pattern extractor |
 
-### 4. Refactor main extraction.ts
+### Resultado esperado
 
-Update `src/lib/extraction.ts`:
-
-- Import the pattern detector and pattern-specific extractors
-- In `extractDataFromPDF`, after extracting raw text from each page:
-  1. Detect the payslip pattern from the first page's text
-  2. Route to the appropriate pattern extractor
-  3. The pattern extractor returns properly structured `ExtractedMonth[]` with all fields
-
-### 5. Add pattern selector in UploadModal
-
-Update `src/components/documents/UploadModal.tsx`:
-
-- Add an optional "Modelo do Holerite" dropdown with options: "Auto-detectar", "1a - Holerite Normal (A.L. IND COM)", etc.
-- Store the selected pattern in the Document so the extraction can use it if auto-detection fails
-- Default to "Auto-detectar"
-
-### 6. Show detected pattern in DocumentDetail
-
-Update `src/pages/DocumentDetail.tsx`:
-
-- Display the detected/selected pattern in the info section (e.g., "Modelo: 1a")
-- Allow re-extraction with a different pattern if needed
-
-## Technical Details
-
-### Pattern 1a Text Parsing Strategy
-
-Since pdf.js joins all text items with spaces, the text for one page looks approximately like:
-
-```
-A.L. IND COM IMP EXP ... CNPJ: 09.406.784/0002-08 CC: EXTRUSAO Folha Mensal Mensalista Marco de 2022 ... 194 LUCAS PEREIRA GONCALVES 722415 1 1 ... 8781 DIAS NORMAIS 28,00 2.009,65 ... Total de Vencimentos 2.420,21 Total de Descontos 1.325,21 ... Valor Liquido 1.095,00 ... Salario Base Sal. Contr. INSS Base Calc. FGTS F.G.T.S do Mes Base Calc. IRRF Faixa IRRF 2.224,97 2.420,16 2.420,16 193,61 1.026,11 0,00
-```
-
-Key regex patterns for 1a:
-- Period: `/Folha\s+Mensal\s+.*?((?:Janeiro|Fevereiro|Marco|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s+de\s+\d{4})/i`
-- Employee name: `/(\d{3})\s+([A-Z][A-Z\s]+?)\s+\d{6}/` (code + name before CBO)
-- Table items: `/(\d{3,4})\s+([\w\s.%\/]+?)\s+([\d.,]+)\s+([\d.,]+)/g` (captures both ref + value)
-- Footer values: sequence of 6 decimal numbers after "Faixa IRRF" text
-
-### File Structure
-
-```
-src/lib/extraction-patterns/
-  detector.ts          -- Auto-detect payslip model
-  pattern1a.ts         -- Extractor for model 1a
-  index.ts             -- Export all patterns
-src/lib/extraction.ts  -- Updated to use pattern system
-src/types/index.ts     -- Add payslipPattern field
-```
+Todos os 13 eventos do PDF serao extraidos corretamente com:
+- Descricoes exatas (DIAS NORMAIS, REFLEXO EXTRAS DSR, etc.)
+- Vencimento e Desconto na coluna correta
+- Cabecalho completo (Empresa, CNPJ, CC, Nome, CBO, Departamento, Filial, Cargo)
+- Rodape completo (Salario Base, bases de INSS/FGTS/IRRF, FGTS do Mes)
+- Dados bancarios (Itau, 4446, 36372-5)
 
