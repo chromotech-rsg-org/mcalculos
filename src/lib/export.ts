@@ -1,73 +1,116 @@
 import * as XLSX from 'xlsx';
-import { ExtractedData } from '@/types';
+import { ExtractedData, PayslipEvent } from '@/types';
+
+const MAX_EVENTS = 20;
+
+/**
+ * Build a single row per month matching the exact Excel format
+ */
+const buildExcelRows = (data: ExtractedData): Record<string, string>[] => {
+  return data.months.map(month => {
+    const row: Record<string, string> = {};
+
+    // Header fields
+    row['Empresa'] = month.empresa || '';
+    row['CNPJ'] = month.cnpj || data.cnpj || '';
+    row['Centro de Custo'] = month.centroCusto || '';
+    row['Tipo de Folha'] = month.tipoFolha || '';
+    row['Competência'] = month.competencia || month.month || '';
+    row['Folha Nº'] = month.folhaNumero || '';
+    row['Código Funcionário'] = month.codigoFuncionario || '';
+    row['Nome Funcionário'] = month.nomeFuncionario || data.employeeName || '';
+    row['CBO'] = month.cbo || '';
+    row['Departamento'] = month.departamento || '';
+    row['Filial'] = month.filial || '';
+    row['Cargo'] = month.cargo || '';
+
+    // Event lines 1-20
+    const eventos = month.eventos || [];
+    for (let i = 0; i < MAX_EVENTS; i++) {
+      const n = i + 1;
+      const ev: PayslipEvent | undefined = eventos[i];
+      row[`Código Evento linha ${n}`] = ev?.codigo || '';
+      row[`Descrição Evento linha ${n}`] = ev?.descricao || '';
+      row[`Referência linha ${n}`] = ev?.referencia || '';
+      row[`Valor Vencimento linha ${n}`] = ev?.vencimento || '';
+      row[`Valor Desconto linha ${n}`] = ev?.desconto || '';
+    }
+
+    // Footer fields
+    row['Data de Admissão'] = month.dataAdmissao || '';
+    row['Salário Base'] = month.salarioBase || '';
+    row['Total Vencimentos'] = month.totalVencimentos || '';
+    row['Total Descontos'] = month.totalDescontos || '';
+    row['Valor Líquido'] = month.valorLiquido || '';
+    row['Base INSS'] = month.baseInss || '';
+    row['Base FGTS'] = month.baseFgts || '';
+    row['FGTS do Mês'] = month.fgtsMes || '';
+    row['Base IRRF'] = month.baseIrrf || '';
+    row['IRRF'] = month.irrf || '';
+    row['Banco'] = month.banco || '';
+    row['Agência'] = month.agencia || '';
+    row['Conta Corrente'] = month.contaCorrente || '';
+
+    return row;
+  });
+};
+
+/**
+ * Build headers in the exact order
+ */
+const getOrderedHeaders = (): string[] => {
+  const headers = [
+    'Empresa', 'CNPJ', 'Centro de Custo', 'Tipo de Folha', 'Competência',
+    'Folha Nº', 'Código Funcionário', 'Nome Funcionário', 'CBO',
+    'Departamento', 'Filial', 'Cargo',
+  ];
+
+  for (let i = 1; i <= MAX_EVENTS; i++) {
+    headers.push(
+      `Código Evento linha ${i}`,
+      `Descrição Evento linha ${i}`,
+      `Referência linha ${i}`,
+      `Valor Vencimento linha ${i}`,
+      `Valor Desconto linha ${i}`,
+    );
+  }
+
+  headers.push(
+    'Data de Admissão', 'Salário Base', 'Total Vencimentos', 'Total Descontos',
+    'Valor Líquido', 'Base INSS', 'Base FGTS', 'FGTS do Mês', 'Base IRRF',
+    'IRRF', 'Banco', 'Agência', 'Conta Corrente',
+  );
+
+  return headers;
+};
 
 export const exportToExcel = (data: ExtractedData, filename: string): void => {
-  // Prepare data for Excel
-  const rows: Record<string, string>[] = [];
-  
-  data.months.forEach(month => {
-    const row: Record<string, string> = { Período: month.month };
-    month.fields.forEach(field => {
-      row[field.key] = field.value;
-    });
-    rows.push(row);
-  });
-  
-  // Create workbook and worksheet
-  const worksheet = XLSX.utils.json_to_sheet(rows);
-  const workbook = XLSX.utils.book_new();
-  
-  // Add header info as a separate sheet
-  const infoSheet = XLSX.utils.aoa_to_sheet([
-    ['Funcionário', data.employeeName],
-    ['CNPJ', data.cnpj],
-    ['Extraído em', new Date(data.extractedAt).toLocaleString('pt-BR')],
-  ]);
-  
-  XLSX.utils.book_append_sheet(workbook, infoSheet, 'Informações');
-  XLSX.utils.book_append_sheet(workbook, worksheet, 'Dados');
-  
+  const rows = buildExcelRows(data);
+  const headers = getOrderedHeaders();
+
+  const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+
   // Auto-size columns
-  const maxWidths: number[] = [];
-  rows.forEach(row => {
-    Object.keys(row).forEach((key, i) => {
-      const len = Math.max(key.length, (row[key] || '').toString().length);
-      maxWidths[i] = Math.max(maxWidths[i] || 0, len);
-    });
-  });
-  worksheet['!cols'] = maxWidths.map(w => ({ wch: Math.min(w + 2, 50) }));
-  
-  // Save file
+  worksheet['!cols'] = headers.map(h => ({ wch: Math.min(Math.max(h.length + 2, 12), 40) }));
+
+  const workbook = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(workbook, worksheet, 'Dados');
   XLSX.writeFile(workbook, `${filename}.xlsx`);
 };
 
 export const exportToCSV = (data: ExtractedData, filename: string): void => {
-  // Get all unique field keys
-  const allKeys = new Set<string>();
-  data.months.forEach(month => {
-    month.fields.forEach(field => allKeys.add(field.key));
+  const rows = buildExcelRows(data);
+  const headers = getOrderedHeaders();
+
+  const csvRows: string[][] = [headers];
+  rows.forEach(row => {
+    csvRows.push(headers.map(h => row[h] || ''));
   });
-  
-  const headers = ['Período', ...Array.from(allKeys)];
-  
-  // Build CSV rows
-  const rows: string[][] = [headers];
-  
-  data.months.forEach(month => {
-    const row: string[] = [month.month];
-    Array.from(allKeys).forEach(key => {
-      const field = month.fields.find(f => f.key === key);
-      row.push(field?.value || '');
-    });
-    rows.push(row);
-  });
-  
-  // Convert to CSV string
-  const csvContent = rows
+
+  const csvContent = csvRows
     .map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
     .join('\n');
-  
-  // Create and download file
+
   const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
   const link = document.createElement('a');
   link.href = URL.createObjectURL(blob);

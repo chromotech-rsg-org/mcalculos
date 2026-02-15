@@ -1,4 +1,4 @@
-import { ExtractedMonth, ExtractedField } from '@/types';
+import { ExtractedMonth, PayslipEvent } from '@/types';
 
 export interface Pattern1aResult {
   employeeName: string;
@@ -13,27 +13,82 @@ const MONTH_NAMES: Record<string, string> = {
   'outubro': '10', 'novembro': '11', 'dezembro': '12',
 };
 
-const extractPeriod = (text: string): string => {
-  // Pattern: "Folha Mensal" ... "Marco de 2022"
+const MONTH_LABELS: Record<string, string> = {
+  'janeiro': 'Janeiro', 'fevereiro': 'Fevereiro', 'marco': 'Março', 'março': 'Março',
+  'abril': 'Abril', 'maio': 'Maio', 'junho': 'Junho',
+  'julho': 'Julho', 'agosto': 'Agosto', 'setembro': 'Setembro',
+  'outubro': 'Outubro', 'novembro': 'Novembro', 'dezembro': 'Dezembro',
+};
+
+const extractPeriod = (text: string): { period: string; competencia: string; tipoFolha: string } => {
+  // Match "Folha Mensal" or similar type
+  const tipoMatch = text.match(/Folha\s+(Mensal|Complementar|[A-Za-zÀ-ú]+)/i);
+  const tipoFolha = tipoMatch ? tipoMatch[0].trim() : 'Mensalista';
+
+  // Match month/year: "Marco de 2022"
   const match = text.match(
-    /Folha\s+Mensal[\s\S]*?((?:Janeiro|Fevereiro|Mar[cç]o|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s+de\s+\d{4})/i
+    /(?:Folha\s+\w+[\s\S]*?)?(?:Mensalista|Horista|Quinzenalista)?\s*((?:Janeiro|Fevereiro|Mar[cç]o|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s+de\s+\d{4})/i
   );
   if (match) {
     const parts = match[1].trim().split(/\s+de\s+/i);
     if (parts.length === 2) {
       const monthKey = parts[0].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       const monthNum = MONTH_NAMES[monthKey] || '??';
-      return `${monthNum}/${parts[1]}`;
+      const label = MONTH_LABELS[monthKey] || parts[0];
+      return {
+        period: `${monthNum}/${parts[1]}`,
+        competencia: `${label} de ${parts[1]}`,
+        tipoFolha,
+      };
     }
-    return match[1].trim();
+    return { period: match[1].trim(), competencia: match[1].trim(), tipoFolha };
   }
-  return 'Não identificado';
+  return { period: 'Não identificado', competencia: 'Não identificado', tipoFolha };
 };
 
-const extractEmployeeName = (text: string): string => {
-  // Pattern: 3-digit code + NAME IN CAPS + 6-digit CBO
-  const match = text.match(/\b(\d{3})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s]{3,}?)\s+\d{6}\b/);
-  return match ? match[2].trim() : '';
+const extractEmployeeInfo = (text: string): {
+  codigo: string; nome: string; cbo: string; departamento: string; filial: string;
+} => {
+  // Pattern: 3-digit code + NAME IN CAPS + 6-digit CBO + dept + filial
+  const match = text.match(/\b(\d{3})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s]{3,}?)\s+(\d{6})\s+(\d+)\s+(\d+)\b/);
+  if (match) {
+    return {
+      codigo: match[1],
+      nome: match[2].trim(),
+      cbo: match[3],
+      departamento: match[4],
+      filial: match[5],
+    };
+  }
+  // Fallback: just name
+  const nameMatch = text.match(/\b(\d{3})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s]{3,}?)\s+\d{6}\b/);
+  return {
+    codigo: nameMatch ? nameMatch[1] : '',
+    nome: nameMatch ? nameMatch[2].trim() : '',
+    cbo: '', departamento: '', filial: '',
+  };
+};
+
+const extractCargo = (text: string): string => {
+  // Cargo appears after employee line, before "Admissao"
+  const match = text.match(/\d{6}\s+\d+\s+\d+\s+([A-ZÀ-Ú][A-ZÀ-Ú\s.]+?)\s+Admiss/i);
+  return match ? match[1].trim() : '';
+};
+
+const extractDataAdmissao = (text: string): string => {
+  const match = text.match(/Admiss[aã]o[:\s]*(\d{2}\/\d{2}\/\d{4})/i);
+  return match ? match[1] : '';
+};
+
+const extractEmpresaName = (text: string): string => {
+  // Take text before CNPJ
+  const match = text.match(/^([\s\S]*?)CNPJ/i);
+  if (match) {
+    // Clean up - take the last meaningful line before CNPJ
+    const parts = match[1].trim().split(/\s{3,}/);
+    return parts[parts.length - 1]?.trim() || match[1].trim().substring(0, 80);
+  }
+  return '';
 };
 
 const extractCNPJ = (text: string): string => {
@@ -41,109 +96,178 @@ const extractCNPJ = (text: string): string => {
   return match ? match[1].trim() : '';
 };
 
-const extractTableItems = (text: string): ExtractedField[] => {
-  const fields: ExtractedField[] = [];
+const extractCentroCusto = (text: string): string => {
+  const match = text.match(/CC[:\s]*([A-ZÀ-Úa-zà-ú\s]+?)(?:\s+Folha|\s+\d)/i);
+  return match ? match[1].trim() : '';
+};
 
-  // Match rubric lines: code + description + reference + value
-  // The challenge is that pdf.js joins text items with spaces, so we need flexible patterns
-  
-  // First, try to find all rubric entries with code (3-4 digits) + description + numbers
+const extractFolhaNumero = (text: string): string => {
+  const match = text.match(/Folha\s+(?:Mensal|Complementar|\w+)\s+.*?\b(\d{2,4})\s+\d{3}\s+[A-Z]/i);
+  // Try another pattern: look for a number between tipo folha info and employee code
+  const match2 = text.match(/Mensalista\s+.*?(?:de\s+\d{4})\s+(\d{2,4})\s+\d{3}/i);
+  return match ? match[1] : (match2 ? match2[1] : '');
+};
+
+const extractTableEvents = (text: string): PayslipEvent[] => {
+  const events: PayslipEvent[] = [];
+
+  // Match rubric lines: code (3-4 digits) + description + reference + value(s)
   const rubricPattern = /\b(\d{3,4})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s.%\/c]{2,}?)\s+([\d.,]+)\s+([\d.,]+)/g;
   let match;
   
   while ((match = rubricPattern.exec(text)) !== null) {
-    const description = match[2].trim();
+    const codigo = match[1];
+    const descricao = match[2].trim();
     const referencia = match[3].trim();
     const valor = match[4].trim();
     
-    // Skip if description looks like a number sequence (false positive)
-    if (/^\d+$/.test(description)) continue;
+    if (/^\d+$/.test(descricao)) continue;
     
-    // Add with reference if it's meaningful
-    if (referencia !== '0,00' && referencia !== '0') {
-      fields.push({ key: description, value: `${valor} (Ref: ${referencia})` });
+    // Determine if it's vencimento or desconto based on context
+    // For now, check if there's a 5th capture (second value = desconto)
+    // We'll also check for a trailing value
+    const afterMatch = text.substring(match.index + match[0].length).match(/^\s+([\d.,]+)/);
+    
+    if (afterMatch) {
+      // Has two values: vencimento + desconto
+      events.push({
+        codigo,
+        descricao,
+        referencia,
+        vencimento: valor,
+        desconto: afterMatch[1],
+      });
     } else {
-      fields.push({ key: description, value: valor });
+      // Single value - need to determine if vencimento or desconto
+      // Heuristic: common discount codes
+      const isDesconto = ['998', '871', '981', '217', '783', '784', '999'].includes(codigo) ||
+        descricao.toLowerCase().includes('desconto') ||
+        descricao.toLowerCase().includes('i.n.s.s') ||
+        descricao.toLowerCase().includes('vale transporte');
+      
+      events.push({
+        codigo,
+        descricao,
+        referencia,
+        vencimento: isDesconto ? '0' : valor,
+        desconto: isDesconto ? valor : '0',
+      });
     }
   }
 
-  return fields;
+  return events;
 };
 
-const extractTotals = (text: string): ExtractedField[] => {
-  const fields: ExtractedField[] = [];
-  
+const extractTotals = (text: string): {
+  totalVencimentos: string; totalDescontos: string; valorLiquido: string;
+} => {
   const totalVenc = text.match(/Total\s+de\s+Vencimentos\s+([\d.,]+)/i);
-  if (totalVenc) fields.push({ key: 'Total de Vencimentos', value: totalVenc[1] });
-  
   const totalDesc = text.match(/Total\s+de\s+Descontos\s+([\d.,]+)/i);
-  if (totalDesc) fields.push({ key: 'Total de Descontos', value: totalDesc[1] });
-  
   const valorLiq = text.match(/Valor\s+L[ií]quido\s+([\d.,]+)/i);
-  if (valorLiq) fields.push({ key: 'Valor Líquido', value: valorLiq[1] });
   
-  return fields;
+  return {
+    totalVencimentos: totalVenc ? totalVenc[1] : '',
+    totalDescontos: totalDesc ? totalDesc[1] : '',
+    valorLiquido: valorLiq ? valorLiq[1] : '',
+  };
 };
 
-const extractFooter = (text: string): ExtractedField[] => {
-  const fields: ExtractedField[] = [];
+const extractFooter = (text: string): {
+  salarioBase: string; baseInss: string; baseFgts: string;
+  fgtsMes: string; baseIrrf: string; irrf: string;
+} => {
+  const result = { salarioBase: '', baseInss: '', baseFgts: '', fgtsMes: '', baseIrrf: '', irrf: '' };
   
-  // Footer labels appear in sequence, followed by their values
-  // "Salario Base Sal. Contr. INSS Base Calc. FGTS F.G.T.S do Mes Base Calc. IRRF Faixa IRRF"
-  // Then 6 numbers follow
   const footerMatch = text.match(
     /Faixa\s+IRRF\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)\s+([\d.,]+)/i
   );
   
   if (footerMatch) {
-    fields.push({ key: 'Salário Base', value: footerMatch[1] });
-    fields.push({ key: 'Sal. Contr. INSS', value: footerMatch[2] });
-    fields.push({ key: 'Base Calc. FGTS', value: footerMatch[3] });
-    fields.push({ key: 'F.G.T.S do Mês', value: footerMatch[4] });
-    fields.push({ key: 'Base Calc. IRRF', value: footerMatch[5] });
-    fields.push({ key: 'Faixa IRRF', value: footerMatch[6] });
-    return fields;
+    result.salarioBase = footerMatch[1];
+    result.baseInss = footerMatch[2];
+    result.baseFgts = footerMatch[3];
+    result.fgtsMes = footerMatch[4];
+    result.baseIrrf = footerMatch[5];
+    result.irrf = footerMatch[6];
+    return result;
   }
 
-  // Alternative: try to find individual footer fields
+  // Individual fallbacks
   const salBase = text.match(/Sal[aá]rio\s+Base\s+([\d.,]+)/i);
-  if (salBase) fields.push({ key: 'Salário Base', value: salBase[1] });
-
+  if (salBase) result.salarioBase = salBase[1];
   const salInss = text.match(/Sal\.\s*Contr\.\s*INSS\s+([\d.,]+)/i);
-  if (salInss) fields.push({ key: 'Sal. Contr. INSS', value: salInss[1] });
-
+  if (salInss) result.baseInss = salInss[1];
   const baseFgts = text.match(/Base\s+Calc\.\s*FGTS\s+([\d.,]+)/i);
-  if (baseFgts) fields.push({ key: 'Base Calc. FGTS', value: baseFgts[1] });
-
+  if (baseFgts) result.baseFgts = baseFgts[1];
   const fgtsMes = text.match(/F\.?G\.?T\.?S\.?\s+do\s+M[eê]s\s+([\d.,]+)/i);
-  if (fgtsMes) fields.push({ key: 'F.G.T.S do Mês', value: fgtsMes[1] });
-
+  if (fgtsMes) result.fgtsMes = fgtsMes[1];
   const baseIrrf = text.match(/Base\s+Calc\.\s*IRRF\s+([\d.,]+)/i);
-  if (baseIrrf) fields.push({ key: 'Base Calc. IRRF', value: baseIrrf[1] });
-
+  if (baseIrrf) result.baseIrrf = baseIrrf[1];
   const faixaIrrf = text.match(/Faixa\s+IRRF\s+([\d.,]+)/i);
-  if (faixaIrrf) fields.push({ key: 'Faixa IRRF', value: faixaIrrf[1] });
+  if (faixaIrrf) result.irrf = faixaIrrf[1];
 
-  return fields;
+  return result;
+};
+
+const extractBankInfo = (text: string): { banco: string; agencia: string; contaCorrente: string } => {
+  // Pattern: bank name + agency number + account number near end
+  const match = text.match(/(Ita[uú]|Bradesco|Santander|Caixa|Banco\s+do\s+Brasil|BB|Sicoob|Sicredi|Nu[Bb]ank|Inter|C6)\s+(\d{3,5})\s+([\d.-]+)/i);
+  if (match) {
+    return { banco: match[1], agencia: match[2], contaCorrente: match[3] };
+  }
+  return { banco: '', agencia: '', contaCorrente: '' };
 };
 
 /**
  * Extract data from a single page of a "1a" pattern payslip
  */
 export const extractPattern1aPage = (text: string): { month: ExtractedMonth; employeeName: string; cnpj: string } => {
-  const period = extractPeriod(text);
-  const employeeName = extractEmployeeName(text);
+  const { period, competencia, tipoFolha } = extractPeriod(text);
+  const empInfo = extractEmployeeInfo(text);
   const cnpj = extractCNPJ(text);
-  
-  const tableFields = extractTableItems(text);
-  const totalFields = extractTotals(text);
-  const footerFields = extractFooter(text);
-  
-  const allFields = [...tableFields, ...totalFields, ...footerFields];
-  
+  const empresa = extractEmpresaName(text);
+  const centroCusto = extractCentroCusto(text);
+  const folhaNumero = extractFolhaNumero(text);
+  const cargo = extractCargo(text);
+  const dataAdmissao = extractDataAdmissao(text);
+  const eventos = extractTableEvents(text);
+  const totals = extractTotals(text);
+  const footer = extractFooter(text);
+  const bank = extractBankInfo(text);
+
+  // Build legacy fields for backward compatibility
+  const fields = eventos.map(e => ({
+    key: e.descricao,
+    value: e.vencimento !== '0' ? e.vencimento : e.desconto,
+  }));
+  if (totals.totalVencimentos) fields.push({ key: 'Total de Vencimentos', value: totals.totalVencimentos });
+  if (totals.totalDescontos) fields.push({ key: 'Total de Descontos', value: totals.totalDescontos });
+  if (totals.valorLiquido) fields.push({ key: 'Valor Líquido', value: totals.valorLiquido });
+  if (footer.salarioBase) fields.push({ key: 'Salário Base', value: footer.salarioBase });
+
   return {
-    month: { month: period, fields: allFields },
-    employeeName,
+    month: {
+      month: period,
+      fields,
+      empresa,
+      cnpj,
+      centroCusto,
+      tipoFolha,
+      competencia,
+      folhaNumero,
+      codigoFuncionario: empInfo.codigo,
+      nomeFuncionario: empInfo.nome,
+      cbo: empInfo.cbo,
+      departamento: empInfo.departamento,
+      filial: empInfo.filial,
+      cargo,
+      dataAdmissao,
+      eventos,
+      ...totals,
+      ...footer,
+      ...bank,
+    },
+    employeeName: empInfo.nome,
     cnpj,
   };
 };

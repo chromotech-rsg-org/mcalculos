@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Download, Trash2, Edit2, Save, X, Loader2, FileSpreadsheet, AlertCircle, CheckCircle } from 'lucide-react';
+import { ArrowLeft, FileText, Download, Trash2, Edit2, Save, X, Loader2, FileSpreadsheet, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -8,12 +8,18 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { getDocumentById, saveDocument, deleteDocument } from '@/lib/storage';
 import { Document, ExtractedData, ExtractedMonth } from '@/types';
 import { extractDataFromPDF, extractDataFromImage } from '@/lib/extraction';
 import { exportToExcel, exportToCSV } from '@/lib/export';
+
+const PATTERN_OPTIONS = [
+  { value: 'auto', label: 'Auto-detectar' },
+  { value: '1a', label: '1a - Holerite Normal (Folha Mensal)' },
+];
 
 const DocumentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -23,12 +29,12 @@ const DocumentDetail: React.FC = () => {
   const [doc, setDoc] = useState<Document | null>(null);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractionProgress, setExtractionProgress] = useState(0);
-  const [editingCell, setEditingCell] = useState<{ month: number; field: number } | null>(null);
+  const [editingCell, setEditingCell] = useState<{ monthIndex: number; field: string; subField?: string; eventIndex?: number } | null>(null);
   const [editValue, setEditValue] = useState('');
-  const [selectedFields, setSelectedFields] = useState<string[]>([]);
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
+  const [selectedPattern, setSelectedPattern] = useState<string>('auto');
   
   const pdfContainerRef = useRef<HTMLDivElement>(null);
 
@@ -37,15 +43,25 @@ const DocumentDetail: React.FC = () => {
       const document = getDocumentById(id);
       if (document) {
         setDoc(document);
-        if (document.extractedData) {
-          const allFields = document.extractedData.months.flatMap(m => m.fields.map(f => f.key));
-          setSelectedFields([...new Set(allFields)]);
-        }
+        setSelectedPattern(document.payslipPattern || document.extractedData?.payslipPattern || 'auto');
       } else {
         navigate('/documents');
       }
     }
   }, [id, navigate]);
+
+  const handlePatternChange = (value: string) => {
+    setSelectedPattern(value);
+    if (doc) {
+      const updatedDoc = {
+        ...doc,
+        payslipPattern: value !== 'auto' ? value : undefined,
+        updatedAt: new Date().toISOString(),
+      };
+      setDoc(updatedDoc);
+      saveDocument(updatedDoc);
+    }
+  };
 
   const handleExtraction = async () => {
     if (!doc) return;
@@ -62,15 +78,17 @@ const DocumentDetail: React.FC = () => {
       let employeeName = '';
       let cnpj = '';
       let documentType: ExtractedData['documentType'] = 'holerite_normal';
+      let detectedPattern: string | undefined;
       
       for (let i = 0; i < doc.files.length; i++) {
         const file = doc.files[i];
         setExtractionProgress(Math.round(((i + 1) / doc.files.length) * 100));
         
         let extractedData: ExtractedData;
+        const patternToUse = selectedPattern !== 'auto' ? selectedPattern : undefined;
         
         if (file.type === 'application/pdf') {
-          extractedData = await extractDataFromPDF(file.base64, doc.payslipPattern);
+          extractedData = await extractDataFromPDF(file.base64, patternToUse);
         } else {
           extractedData = await extractDataFromImage(file.base64);
         }
@@ -78,6 +96,7 @@ const DocumentDetail: React.FC = () => {
         if (extractedData.employeeName) employeeName = extractedData.employeeName;
         if (extractedData.cnpj) cnpj = extractedData.cnpj;
         documentType = extractedData.documentType;
+        if (extractedData.payslipPattern) detectedPattern = extractedData.payslipPattern;
         allMonths = [...allMonths, ...extractedData.months];
       }
       
@@ -85,6 +104,7 @@ const DocumentDetail: React.FC = () => {
         employeeName,
         cnpj,
         documentType,
+        payslipPattern: detectedPattern || (selectedPattern !== 'auto' ? selectedPattern : undefined),
         months: allMonths,
         extractedAt: new Date().toISOString(),
       };
@@ -92,6 +112,7 @@ const DocumentDetail: React.FC = () => {
       const finalDoc = {
         ...doc,
         extractedData: finalData,
+        payslipPattern: detectedPattern || doc.payslipPattern,
         status: 'extracted' as const,
         updatedAt: new Date().toISOString(),
       };
@@ -99,8 +120,10 @@ const DocumentDetail: React.FC = () => {
       setDoc(finalDoc);
       saveDocument(finalDoc);
       
-      const allFields = allMonths.flatMap(m => m.fields.map(f => f.key));
-      setSelectedFields([...new Set(allFields)]);
+      // Update selected pattern to detected one
+      if (detectedPattern && selectedPattern === 'auto') {
+        setSelectedPattern(detectedPattern);
+      }
       
       toast({
         title: 'Extração concluída!',
@@ -122,8 +145,8 @@ const DocumentDetail: React.FC = () => {
     setIsExtracting(false);
   };
 
-  const startEditing = (monthIndex: number, fieldIndex: number, currentValue: string) => {
-    setEditingCell({ month: monthIndex, field: fieldIndex });
+  const startEditing = (monthIndex: number, field: string, currentValue: string, subField?: string, eventIndex?: number) => {
+    setEditingCell({ monthIndex, field, subField, eventIndex });
     setEditValue(currentValue);
   };
 
@@ -131,7 +154,21 @@ const DocumentDetail: React.FC = () => {
     if (!doc || !doc.extractedData || !editingCell) return;
     
     const updatedMonths = [...doc.extractedData.months];
-    updatedMonths[editingCell.month].fields[editingCell.field].value = editValue;
+    const month = { ...updatedMonths[editingCell.monthIndex] };
+    
+    if (editingCell.eventIndex !== undefined && editingCell.subField && month.eventos) {
+      const eventos = [...month.eventos];
+      eventos[editingCell.eventIndex] = {
+        ...eventos[editingCell.eventIndex],
+        [editingCell.subField]: editValue,
+      };
+      month.eventos = eventos;
+    } else {
+      // Direct field on month
+      (month as any)[editingCell.field] = editValue;
+    }
+    
+    updatedMonths[editingCell.monthIndex] = month;
     
     const updatedDoc = {
       ...doc,
@@ -143,10 +180,7 @@ const DocumentDetail: React.FC = () => {
     saveDocument(updatedDoc);
     setEditingCell(null);
     
-    toast({
-      title: 'Salvo!',
-      description: 'Alteração salva com sucesso.',
-    });
+    toast({ title: 'Salvo!', description: 'Alteração salva com sucesso.' });
   };
 
   const cancelEdit = () => {
@@ -166,45 +200,29 @@ const DocumentDetail: React.FC = () => {
     
     setDoc(updatedDoc);
     saveDocument(updatedDoc);
-    
-    toast({
-      title: 'Linha excluída',
-      description: 'O período foi removido dos dados extraídos.',
-    });
+    toast({ title: 'Período excluído', description: 'O período foi removido dos dados extraídos.' });
   };
 
   const handleExport = (format: 'xlsx' | 'csv') => {
     if (!doc || !doc.extractedData) return;
     
-    const filteredData = {
-      ...doc.extractedData,
-      months: doc.extractedData.months.map(month => ({
-        ...month,
-        fields: month.fields.filter(f => selectedFields.includes(f.key)),
-      })),
-    };
-    
     if (format === 'xlsx') {
-      exportToExcel(filteredData, doc.name);
+      exportToExcel(doc.extractedData, doc.name);
     } else {
-      exportToCSV(filteredData, doc.name);
+      exportToCSV(doc.extractedData, doc.name);
     }
     
     toast({
       title: 'Exportação concluída!',
       description: `Arquivo ${format.toUpperCase()} baixado com sucesso.`,
     });
-    
     setExportDialogOpen(false);
   };
 
   const handleDelete = () => {
     if (!doc) return;
     deleteDocument(doc.id);
-    toast({
-      title: 'Documento excluído',
-      description: 'O documento foi removido com sucesso.',
-    });
+    toast({ title: 'Documento excluído', description: 'O documento foi removido com sucesso.' });
     navigate('/documents');
   };
 
@@ -217,17 +235,51 @@ const DocumentDetail: React.FC = () => {
     link.click();
   };
 
-  const toggleFieldSelection = (field: string) => {
-    setSelectedFields(prev =>
-      prev.includes(field) ? prev.filter(f => f !== field) : [...prev, field]
+  const renderEditableCell = (
+    value: string,
+    monthIndex: number,
+    field: string,
+    subField?: string,
+    eventIndex?: number,
+  ) => {
+    const isEditing =
+      editingCell?.monthIndex === monthIndex &&
+      editingCell?.field === field &&
+      editingCell?.subField === subField &&
+      editingCell?.eventIndex === eventIndex;
+
+    if (isEditing) {
+      return (
+        <div className="flex items-center gap-1">
+          <Input
+            value={editValue}
+            onChange={(e) => setEditValue(e.target.value)}
+            className="h-7 text-xs"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') saveEdit();
+              if (e.key === 'Escape') cancelEdit();
+            }}
+          />
+          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={saveEdit}>
+            <Save className="h-3 w-3 text-primary" />
+          </Button>
+          <Button size="icon" variant="ghost" className="h-6 w-6" onClick={cancelEdit}>
+            <X className="h-3 w-3" />
+          </Button>
+        </div>
+      );
+    }
+
+    return (
+      <span
+        className="cursor-pointer hover:text-primary hover:underline"
+        onClick={() => startEditing(monthIndex, field, value || '', subField, eventIndex)}
+      >
+        {value || '-'}
+      </span>
     );
   };
-
-  const getAllFields = useCallback((): string[] => {
-    if (!doc?.extractedData) return [];
-    const fields = doc.extractedData.months.flatMap(m => m.fields.map(f => f.key));
-    return [...new Set(fields)];
-  }, [doc]);
 
   if (!doc) {
     return (
@@ -307,9 +359,25 @@ const DocumentDetail: React.FC = () => {
 
         {/* Extraction Panel */}
         <div className="space-y-6">
-          {/* Status Card */}
+          {/* Pattern Select + Status */}
           <Card>
-            <CardContent className="pt-6">
+            <CardContent className="pt-6 space-y-4">
+              {/* Pattern selector - always visible */}
+              <div className="space-y-2">
+                <Label>Modelo do Holerite</Label>
+                <Select value={selectedPattern} onValueChange={handlePatternChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o modelo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PATTERN_OPTIONS.map(opt => (
+                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
+              {/* Status */}
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   {doc.status === 'pending' && (
@@ -337,6 +405,7 @@ const DocumentDetail: React.FC = () => {
                         <p className="font-medium">Dados extraídos</p>
                         <p className="text-sm text-muted-foreground">
                           {doc.extractedData?.months.length} período(s)
+                          {doc.extractedData?.payslipPattern && ` • Modelo ${doc.extractedData.payslipPattern}`}
                         </p>
                       </div>
                     </>
@@ -352,174 +421,166 @@ const DocumentDetail: React.FC = () => {
                   )}
                 </div>
                 
-                {(doc.status === 'pending' || doc.status === 'error') && (
-                  <Button
-                    onClick={handleExtraction}
-                    disabled={isExtracting}
-                    className="gradient-primary text-primary-foreground"
-                  >
-                    {isExtracting ? (
-                      <>
-                        <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                        Extraindo...
-                      </>
-                    ) : (
-                      'Extrair Dados'
-                    )}
-                  </Button>
-                )}
-                
-                {doc.status === 'extracted' && (
-                  <Button onClick={() => setExportDialogOpen(true)}>
-                    <FileSpreadsheet className="h-4 w-4 mr-2" />
-                    Exportar
-                  </Button>
-                )}
+                <div className="flex gap-2">
+                  {(doc.status === 'pending' || doc.status === 'error') && (
+                    <Button
+                      onClick={handleExtraction}
+                      disabled={isExtracting}
+                      className="gradient-primary text-primary-foreground"
+                    >
+                      {isExtracting ? (
+                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Extraindo...</>
+                      ) : 'Extrair Dados'}
+                    </Button>
+                  )}
+                  
+                  {doc.status === 'extracted' && (
+                    <>
+                      <Button variant="outline" size="sm" onClick={handleExtraction} disabled={isExtracting}>
+                        <RefreshCw className="h-4 w-4 mr-1" />
+                        Re-extrair
+                      </Button>
+                      <Button onClick={() => setExportDialogOpen(true)}>
+                        <FileSpreadsheet className="h-4 w-4 mr-2" />
+                        Exportar
+                      </Button>
+                    </>
+                  )}
+                </div>
               </div>
               
               {isExtracting && (
-                <div className="mt-4">
-                  <div className="h-2 bg-muted rounded-full overflow-hidden">
-                    <div
-                      className="h-full gradient-primary transition-all duration-300"
-                      style={{ width: `${extractionProgress}%` }}
-                    />
-                  </div>
+                <div className="h-2 bg-muted rounded-full overflow-hidden">
+                  <div
+                    className="h-full gradient-primary transition-all duration-300"
+                    style={{ width: `${extractionProgress}%` }}
+                  />
                 </div>
               )}
             </CardContent>
           </Card>
 
           {/* Extracted Data */}
-          {doc.extractedData && (
-            <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Dados Extraídos</CardTitle>
-                <CardDescription>
-                  Clique em um valor para editar
-                </CardDescription>
+          {doc.extractedData && doc.extractedData.months.map((month, monthIndex) => (
+            <Card key={monthIndex}>
+              <CardHeader className="pb-3">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-lg">
+                    {month.competencia || month.month}
+                  </CardTitle>
+                  <Button
+                    size="icon"
+                    variant="ghost"
+                    className="h-8 w-8 text-destructive"
+                    onClick={() => deleteRow(monthIndex)}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                </div>
+                <CardDescription>Clique em qualquer valor para editar</CardDescription>
               </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {/* Employee Info */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 rounded-lg bg-muted/50">
-                    <div>
-                      <p className="text-sm text-muted-foreground">Funcionário</p>
-                      <p className="font-medium">{doc.extractedData.employeeName || 'Não identificado'}</p>
-                    </div>
-                    <div>
-                      <p className="text-sm text-muted-foreground">CNPJ</p>
-                      <p className="font-medium">{doc.extractedData.cnpj || 'Não identificado'}</p>
-                    </div>
-                    {doc.extractedData.payslipPattern && (
-                      <div>
-                        <p className="text-sm text-muted-foreground">Modelo</p>
-                        <p className="font-medium">{doc.extractedData.payslipPattern}</p>
+              <CardContent className="space-y-4">
+                {/* Header info */}
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  {[
+                    { label: 'Empresa', field: 'empresa' },
+                    { label: 'CNPJ', field: 'cnpj' },
+                    { label: 'Centro de Custo', field: 'centroCusto' },
+                    { label: 'Tipo de Folha', field: 'tipoFolha' },
+                    { label: 'Cód. Funcionário', field: 'codigoFuncionario' },
+                    { label: 'Nome Funcionário', field: 'nomeFuncionario' },
+                    { label: 'CBO', field: 'cbo' },
+                    { label: 'Departamento', field: 'departamento' },
+                    { label: 'Filial', field: 'filial' },
+                    { label: 'Cargo', field: 'cargo' },
+                    { label: 'Data Admissão', field: 'dataAdmissao' },
+                  ].map(({ label, field }) => (
+                    <div key={field}>
+                      <p className="text-muted-foreground text-xs">{label}</p>
+                      <div className="font-medium">
+                        {renderEditableCell((month as any)[field] || '', monthIndex, field)}
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  ))}
+                </div>
 
-                  {/* Data Table */}
-                  <div className="rounded-lg border overflow-auto max-h-96">
+                {/* Events table */}
+                {month.eventos && month.eventos.length > 0 && (
+                  <div className="rounded-lg border overflow-auto max-h-80">
                     <Table>
                       <TableHeader>
                         <TableRow>
-                          <TableHead className="sticky left-0 bg-background">Período</TableHead>
-                          <TableHead>Campo</TableHead>
-                          <TableHead>Valor</TableHead>
-                          <TableHead className="w-20">Ações</TableHead>
+                          <TableHead className="text-xs">Código</TableHead>
+                          <TableHead className="text-xs">Descrição</TableHead>
+                          <TableHead className="text-xs">Ref.</TableHead>
+                          <TableHead className="text-xs">Vencimento</TableHead>
+                          <TableHead className="text-xs">Desconto</TableHead>
                         </TableRow>
                       </TableHeader>
                       <TableBody>
-                        {doc.extractedData.months.map((month, monthIndex) => (
-                          <React.Fragment key={monthIndex}>
-                            {month.fields.map((field, fieldIndex) => (
-                              <TableRow key={`${monthIndex}-${fieldIndex}`}>
-                                {fieldIndex === 0 && (
-                                  <TableCell
-                                    rowSpan={month.fields.length}
-                                    className="sticky left-0 bg-background font-medium"
-                                  >
-                                    {month.month}
-                                  </TableCell>
-                                )}
-                                <TableCell className="text-muted-foreground">{field.key}</TableCell>
-                                <TableCell>
-                                  {editingCell?.month === monthIndex && editingCell?.field === fieldIndex ? (
-                                    <div className="flex items-center gap-2">
-                                      <Input
-                                        value={editValue}
-                                        onChange={(e) => setEditValue(e.target.value)}
-                                        className="h-8"
-                                        autoFocus
-                                      />
-                                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={saveEdit}>
-                                        <Save className="h-4 w-4 text-primary" />
-                                      </Button>
-                                      <Button size="icon" variant="ghost" className="h-8 w-8" onClick={cancelEdit}>
-                                        <X className="h-4 w-4" />
-                                      </Button>
-                                    </div>
-                                  ) : (
-                                    <span
-                                      className="cursor-pointer hover:text-primary"
-                                      onClick={() => startEditing(monthIndex, fieldIndex, field.value)}
-                                    >
-                                      {field.value}
-                                    </span>
-                                  )}
-                                </TableCell>
-                                {fieldIndex === 0 && (
-                                  <TableCell rowSpan={month.fields.length}>
-                                    <Button
-                                      size="icon"
-                                      variant="ghost"
-                                      className="h-8 w-8 text-destructive"
-                                      onClick={() => deleteRow(monthIndex)}
-                                    >
-                                      <Trash2 className="h-4 w-4" />
-                                    </Button>
-                                  </TableCell>
-                                )}
-                              </TableRow>
-                            ))}
-                          </React.Fragment>
+                        {month.eventos.map((ev, evIdx) => (
+                          <TableRow key={evIdx}>
+                            <TableCell className="text-xs py-1">
+                              {renderEditableCell(ev.codigo, monthIndex, 'eventos', 'codigo', evIdx)}
+                            </TableCell>
+                            <TableCell className="text-xs py-1">
+                              {renderEditableCell(ev.descricao, monthIndex, 'eventos', 'descricao', evIdx)}
+                            </TableCell>
+                            <TableCell className="text-xs py-1">
+                              {renderEditableCell(ev.referencia, monthIndex, 'eventos', 'referencia', evIdx)}
+                            </TableCell>
+                            <TableCell className="text-xs py-1">
+                              {renderEditableCell(ev.vencimento, monthIndex, 'eventos', 'vencimento', evIdx)}
+                            </TableCell>
+                            <TableCell className="text-xs py-1">
+                              {renderEditableCell(ev.desconto, monthIndex, 'eventos', 'desconto', evIdx)}
+                            </TableCell>
+                          </TableRow>
                         ))}
                       </TableBody>
                     </Table>
                   </div>
+                )}
+
+                {/* Footer totals */}
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm p-3 rounded-lg bg-muted/50">
+                  {[
+                    { label: 'Salário Base', field: 'salarioBase' },
+                    { label: 'Total Vencimentos', field: 'totalVencimentos' },
+                    { label: 'Total Descontos', field: 'totalDescontos' },
+                    { label: 'Valor Líquido', field: 'valorLiquido' },
+                    { label: 'Base INSS', field: 'baseInss' },
+                    { label: 'Base FGTS', field: 'baseFgts' },
+                    { label: 'FGTS do Mês', field: 'fgtsMes' },
+                    { label: 'Base IRRF', field: 'baseIrrf' },
+                    { label: 'IRRF', field: 'irrf' },
+                    { label: 'Banco', field: 'banco' },
+                    { label: 'Agência', field: 'agencia' },
+                    { label: 'Conta Corrente', field: 'contaCorrente' },
+                  ].map(({ label, field }) => (
+                    <div key={field}>
+                      <p className="text-muted-foreground text-xs">{label}</p>
+                      <div className="font-medium">
+                        {renderEditableCell((month as any)[field] || '', monthIndex, field)}
+                      </div>
+                    </div>
+                  ))}
                 </div>
               </CardContent>
             </Card>
-          )}
+          ))}
         </div>
       </div>
 
       {/* Export Dialog */}
       <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-sm">
           <DialogHeader>
             <DialogTitle>Exportar Dados</DialogTitle>
             <DialogDescription>
-              Selecione os campos que deseja incluir na exportação
+              Escolha o formato de exportação
             </DialogDescription>
           </DialogHeader>
-          
-          <div className="space-y-4">
-            <div className="grid grid-cols-2 gap-2 max-h-64 overflow-y-auto">
-              {getAllFields().map(field => (
-                <div key={field} className="flex items-center gap-2">
-                  <Checkbox
-                    id={field}
-                    checked={selectedFields.includes(field)}
-                    onCheckedChange={() => toggleFieldSelection(field)}
-                  />
-                  <Label htmlFor={field} className="text-sm truncate">{field}</Label>
-                </div>
-              ))}
-            </div>
-          </div>
-          
           <DialogFooter className="flex-col sm:flex-row gap-2">
             <Button variant="outline" onClick={() => handleExport('csv')}>
               Exportar CSV

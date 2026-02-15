@@ -31,9 +31,44 @@ export interface ExtractedField {
   value: string;
 }
 
+export interface PayslipEvent {
+  codigo: string;
+  descricao: string;
+  referencia: string;
+  vencimento: string;
+  desconto: string;
+}
+
 export interface ExtractedMonth {
   month: string;
   fields: ExtractedField[];
+  // Structured payslip data (pattern-specific)
+  empresa?: string;
+  cnpj?: string;
+  centroCusto?: string;
+  tipoFolha?: string;
+  competencia?: string;
+  folhaNumero?: string;
+  codigoFuncionario?: string;
+  nomeFuncionario?: string;
+  cbo?: string;
+  departamento?: string;
+  filial?: string;
+  cargo?: string;
+  dataAdmissao?: string;
+  eventos?: PayslipEvent[];
+  salarioBase?: string;
+  totalVencimentos?: string;
+  totalDescontos?: string;
+  valorLiquido?: string;
+  baseInss?: string;
+  baseFgts?: string;
+  fgtsMes?: string;
+  baseIrrf?: string;
+  irrf?: string;
+  banco?: string;
+  agencia?: string;
+  contaCorrente?: string;
 }
 
 export interface ExtractedData {
