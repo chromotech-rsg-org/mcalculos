@@ -40,6 +40,7 @@ export interface ExtractedData {
   employeeName: string;
   cnpj: string;
   documentType: 'holerite_normal' | 'relatorio_anual' | 'relatorio_imagem' | 'holerite_imagem' | 'termo_rescisao';
+  payslipPattern?: string;
   months: ExtractedMonth[];
   extractedAt: string;
 }
@@ -49,6 +50,7 @@ export interface Document {
   userId: string;
   name: string;
   description: string;
+  payslipPattern?: string;
   files: DocumentFile[];
   extractedData: ExtractedData | null;
   status: 'pending' | 'extracting' | 'extracted' | 'error';

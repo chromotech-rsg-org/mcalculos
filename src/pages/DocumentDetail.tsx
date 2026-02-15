@@ -70,7 +70,7 @@ const DocumentDetail: React.FC = () => {
         let extractedData: ExtractedData;
         
         if (file.type === 'application/pdf') {
-          extractedData = await extractDataFromPDF(file.base64);
+          extractedData = await extractDataFromPDF(file.base64, doc.payslipPattern);
         } else {
           extractedData = await extractDataFromImage(file.base64);
         }
@@ -402,7 +402,7 @@ const DocumentDetail: React.FC = () => {
               <CardContent>
                 <div className="space-y-4">
                   {/* Employee Info */}
-                  <div className="grid grid-cols-2 gap-4 p-4 rounded-lg bg-muted/50">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 p-4 rounded-lg bg-muted/50">
                     <div>
                       <p className="text-sm text-muted-foreground">Funcionário</p>
                       <p className="font-medium">{doc.extractedData.employeeName || 'Não identificado'}</p>
@@ -411,6 +411,12 @@ const DocumentDetail: React.FC = () => {
                       <p className="text-sm text-muted-foreground">CNPJ</p>
                       <p className="font-medium">{doc.extractedData.cnpj || 'Não identificado'}</p>
                     </div>
+                    {doc.extractedData.payslipPattern && (
+                      <div>
+                        <p className="text-sm text-muted-foreground">Modelo</p>
+                        <p className="font-medium">{doc.extractedData.payslipPattern}</p>
+                      </div>
+                    )}
                   </div>
 
                   {/* Data Table */}
