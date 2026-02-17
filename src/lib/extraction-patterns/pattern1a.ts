@@ -168,28 +168,59 @@ const extractEvents = (lines: LayoutLine[]): {
     const line = lines[i];
     const text = line.text;
     
-    // Check for totals
+    // Check for totals - look for the labels and extract values from same line or next line
     if (/Total\s+de\s+Vencimentos/i.test(text)) {
       const vals = line.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      for (const v of vals) {
-        const col = classifyValueColumn(v.x + v.width / 2, vencX!, descX!);
-        if (col === 'vencimento') totalVencimentos = v.str.trim();
-        else totalDescontos = v.str.trim();
+      if (vals.length > 0) {
+        for (const v of vals) {
+          const col = classifyValueColumn(v.x + v.width / 2, vencX!, descX!);
+          if (col === 'vencimento') totalVencimentos = v.str.trim();
+          else totalDescontos = v.str.trim();
+        }
+      } else {
+        // Values might be on the next line
+        const nextLine = i + 1 < lines.length ? lines[i + 1] : null;
+        if (nextLine && !/Total|Valor|Sal[aá]rio/i.test(nextLine.text)) {
+          const nextVals = nextLine.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+          for (const v of nextVals) {
+            const col = classifyValueColumn(v.x + v.width / 2, vencX!, descX!);
+            if (col === 'vencimento') totalVencimentos = v.str.trim();
+            else totalDescontos = v.str.trim();
+          }
+        }
       }
       continue;
     }
     
     if (/Total\s+de\s+Descontos/i.test(text)) {
       const vals = line.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      for (const v of vals) {
-        totalDescontos = v.str.trim();
+      if (vals.length > 0) {
+        for (const v of vals) {
+          totalDescontos = v.str.trim();
+        }
+      } else {
+        // Values might be on the next line
+        const nextLine = i + 1 < lines.length ? lines[i + 1] : null;
+        if (nextLine && !/Total|Valor|Sal[aá]rio/i.test(nextLine.text)) {
+          const nextVals = nextLine.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+          if (nextVals.length > 0) totalDescontos = nextVals[nextVals.length - 1].str.trim();
+        }
       }
       continue;
     }
     
     if (/Valor\s+L[ií]quido/i.test(text)) {
       const vals = line.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (vals.length > 0) valorLiquido = vals[vals.length - 1].str.trim();
+      if (vals.length > 0) {
+        valorLiquido = vals[vals.length - 1].str.trim();
+      } else {
+        // Values might be on the next line
+        const nextLine = i + 1 < lines.length ? lines[i + 1] : null;
+        if (nextLine) {
+          const nextVals = nextLine.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+          if (nextVals.length > 0) valorLiquido = nextVals[nextVals.length - 1].str.trim();
+        }
+      }
       continue;
     }
     
@@ -212,14 +243,27 @@ const extractEvents = (lines: LayoutLine[]): {
       if (!passedCode) continue;
       
       const val = item.str.trim();
+      if (!val) continue;
+      
+      // Only consider as numeric if it's purely digits/dots/commas AND positioned
+      // in the numeric columns area (after the description zone)
       if (/^[\d.,]+$/.test(val) && val.length >= 2) {
         numericItems.push(item);
       } else if (numericItems.length === 0) {
-        // Still in description zone
+        // Still in description zone - but skip if it looks like unrelated text
+        // from another block (e.g. "Assinatura do Funcionário")
+        const itemCenterX = item.x + item.width / 2;
+        // Only add to description if it's NOT far to the right (past the discount column)
+        if (descX !== null && itemCenterX > descX + 50) {
+          // This is text beyond the table columns - ignore it
+          continue;
+        }
         descItems.push(val);
       } else {
-        // Text after numbers (shouldn't happen normally)
-        numericItems.push(item);
+        // Text after numbers - ignore non-numeric text (e.g. "Assinatura do Funcionário")
+        if (/^[\d.,]+$/.test(val)) {
+          numericItems.push(item);
+        }
       }
     }
     
@@ -303,7 +347,9 @@ const extractFooter = (lines: LayoutLine[]): {
 const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string; contaCorrente: string } => {
   const result = { banco: '', agencia: '', contaCorrente: '' };
   
-  for (const line of lines) {
+  // Search all lines for bank info - check multiple patterns
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const text = line.text;
     
     // Look for bank name
@@ -311,17 +357,20 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
     if (bankMatch) {
       result.banco = bankMatch[1];
       
-      // Agencia and conta on same line or nearby items
-      const agMatch = text.match(/Ag[eê]ncia[:\s]*(\d{3,5})/i);
-      if (agMatch) result.agencia = agMatch[1];
+      // Agencia and conta on same line
+      const agMatch = text.match(/Ag[eê]ncia[:\s]*([\d-]+)/i);
+      if (agMatch) result.agencia = agMatch[1].trim();
       
-      const contaMatch = text.match(/(?:Conta|CC)[:\s]*([\d.-]+)/i);
-      if (contaMatch) result.contaCorrente = contaMatch[1];
+      const contaMatch = text.match(/(?:Conta\s*(?:Corrente)?|CC)[:\s]*([\d.-]+)/i);
+      if (contaMatch) result.contaCorrente = contaMatch[1].trim();
       
       // If no explicit labels, try numeric items after bank name
       if (!result.agencia || !result.contaCorrente) {
+        const bankItem = line.items.find(it => bankMatch[0] && it.str.toLowerCase().includes(bankMatch[1].toLowerCase()));
+        const bankX = bankItem ? bankItem.x + bankItem.width : 0;
+        
         const nums = line.items
-          .filter(it => /^[\d.-]+$/.test(it.str.trim()) && it.str.trim().length >= 3)
+          .filter(it => /^[\d.-]+$/.test(it.str.trim()) && it.str.trim().length >= 3 && it.x > bankX)
           .sort((a, b) => a.x - b.x);
         if (nums.length >= 2) {
           if (!result.agencia) result.agencia = nums[0].str.trim();
@@ -331,7 +380,40 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
         }
       }
       
+      // Also check next line for agencia/conta if not found
+      if ((!result.agencia || !result.contaCorrente) && i + 1 < lines.length) {
+        const nextText = lines[i + 1].text;
+        if (!result.agencia) {
+          const agNext = nextText.match(/Ag[eê]ncia[:\s]*([\d-]+)/i);
+          if (agNext) result.agencia = agNext[1].trim();
+        }
+        if (!result.contaCorrente) {
+          const contaNext = nextText.match(/(?:Conta\s*(?:Corrente)?|CC)[:\s]*([\d.-]+)/i);
+          if (contaNext) result.contaCorrente = contaNext[1].trim();
+        }
+        // Try positional from next line
+        if (!result.agencia || !result.contaCorrente) {
+          const nextNums = lines[i + 1].items
+            .filter(it => /^[\d.-]+$/.test(it.str.trim()) && it.str.trim().length >= 3)
+            .sort((a, b) => a.x - b.x);
+          if (nextNums.length >= 2) {
+            if (!result.agencia) result.agencia = nextNums[0].str.trim();
+            if (!result.contaCorrente) result.contaCorrente = nextNums[1].str.trim();
+          }
+        }
+      }
+      
       break;
+    }
+    
+    // Also look for lines with just "Agencia" or "Conta" labels without bank name
+    if (!result.agencia) {
+      const agOnly = text.match(/Ag[eê]ncia[:\s]*([\d-]+)/i);
+      if (agOnly) result.agencia = agOnly[1].trim();
+    }
+    if (!result.contaCorrente) {
+      const contaOnly = text.match(/(?:Conta\s*(?:Corrente)?)[:\s]*([\d.-]+)/i);
+      if (contaOnly) result.contaCorrente = contaOnly[1].trim();
     }
   }
   
