@@ -120,7 +120,6 @@ const DocumentDetail: React.FC = () => {
       setDoc(finalDoc);
       saveDocument(finalDoc);
       
-      // Update selected pattern to detected one
       if (detectedPattern && selectedPattern === 'auto') {
         setSelectedPattern(detectedPattern);
       }
@@ -164,7 +163,6 @@ const DocumentDetail: React.FC = () => {
       };
       month.eventos = eventos;
     } else {
-      // Direct field on month
       (month as any)[editingCell.field] = editValue;
     }
     
@@ -276,7 +274,7 @@ const DocumentDetail: React.FC = () => {
         className="cursor-pointer hover:text-primary hover:underline"
         onClick={() => startEditing(monthIndex, field, value || '', subField, eventIndex)}
       >
-        {value || '-'}
+        {value || '-' }
       </span>
     );
   };
@@ -290,7 +288,7 @@ const DocumentDetail: React.FC = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-4">
@@ -317,29 +315,131 @@ const DocumentDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Main Content */}
-      <div className="grid lg:grid-cols-2 gap-6">
-        {/* PDF Preview */}
-        <Card>
-          <CardHeader className="pb-3">
-            <CardTitle className="text-lg">Preview do Documento</CardTitle>
-            {doc.files.length > 1 && (
-              <div className="flex gap-2 mt-2">
-                {doc.files.map((file, index) => (
-                  <Button
-                    key={file.id}
-                    variant={activeFileIndex === index ? 'default' : 'outline'}
-                    size="sm"
-                    onClick={() => setActiveFileIndex(index)}
-                  >
-                    Arquivo {index + 1}
+      {/* Pattern Select + Status - Full width at top */}
+      <Card>
+        <CardContent className="pt-6 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-end gap-4">
+            <div className="space-y-2 sm:w-64">
+              <Label>Modelo do Holerite</Label>
+              <Select value={selectedPattern} onValueChange={handlePatternChange}>
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione o modelo..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {PATTERN_OPTIONS.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            <div className="flex items-center gap-3 flex-1">
+              {doc.status === 'pending' && (
+                <>
+                  <AlertCircle className="h-5 w-5 text-yellow-500 flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm">Aguardando extração</p>
+                    <p className="text-xs text-muted-foreground">Clique para extrair os dados</p>
+                  </div>
+                </>
+              )}
+              {doc.status === 'extracting' && (
+                <>
+                  <Loader2 className="h-5 w-5 text-primary animate-spin flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm">Extraindo dados...</p>
+                    <p className="text-xs text-muted-foreground">{extractionProgress}% concluído</p>
+                  </div>
+                </>
+              )}
+              {doc.status === 'extracted' && (
+                <>
+                  <CheckCircle className="h-5 w-5 text-primary flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm">Dados extraídos</p>
+                    <p className="text-xs text-muted-foreground">
+                      {doc.extractedData?.months.length} período(s)
+                      {doc.extractedData?.payslipPattern && ` • Modelo ${doc.extractedData.payslipPattern}`}
+                    </p>
+                  </div>
+                </>
+              )}
+              {doc.status === 'error' && (
+                <>
+                  <AlertCircle className="h-5 w-5 text-destructive flex-shrink-0" />
+                  <div className="min-w-0">
+                    <p className="font-medium text-sm">Erro na extração</p>
+                    <p className="text-xs text-muted-foreground">Tente novamente</p>
+                  </div>
+                </>
+              )}
+            </div>
+            
+            <div className="flex gap-2 flex-shrink-0">
+              {(doc.status === 'pending' || doc.status === 'error') && (
+                <Button
+                  onClick={handleExtraction}
+                  disabled={isExtracting}
+                  className="gradient-primary text-primary-foreground"
+                >
+                  {isExtracting ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Extraindo...</>
+                  ) : 'Extrair Dados'}
+                </Button>
+              )}
+              
+              {doc.status === 'extracted' && (
+                <>
+                  <Button variant="outline" size="sm" onClick={handleExtraction} disabled={isExtracting}>
+                    <RefreshCw className="h-4 w-4 mr-1" />
+                    Re-extrair
                   </Button>
-                ))}
-              </div>
-            )}
+                  <Button onClick={() => setExportDialogOpen(true)}>
+                    <FileSpreadsheet className="h-4 w-4 mr-2" />
+                    Exportar
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+          
+          {isExtracting && (
+            <div className="h-2 bg-muted rounded-full overflow-hidden">
+              <div
+                className="h-full gradient-primary transition-all duration-300"
+                style={{ width: `${extractionProgress}%` }}
+              />
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Side by side: PDF Preview + Extracted Data with matching scroll */}
+      <div className="grid lg:grid-cols-2 gap-4" style={{ height: 'calc(100vh - 280px)' }}>
+        {/* PDF Preview */}
+        <Card className="flex flex-col overflow-hidden">
+          <CardHeader className="py-3 flex-shrink-0">
+            <div className="flex items-center justify-between">
+              <CardTitle className="text-base">Preview do Documento</CardTitle>
+              {doc.files.length > 1 && (
+                <div className="flex gap-1">
+                  {doc.files.map((file, index) => (
+                    <Button
+                      key={file.id}
+                      variant={activeFileIndex === index ? 'default' : 'outline'}
+                      size="sm"
+                      className="h-7 text-xs"
+                      onClick={() => setActiveFileIndex(index)}
+                    >
+                      Arq. {index + 1}
+                    </Button>
+                  ))}
+                </div>
+              )}
+            </div>
           </CardHeader>
-          <CardContent>
-            <div ref={pdfContainerRef} className="rounded-lg overflow-hidden bg-muted aspect-[3/4]">
+          <CardContent className="flex-1 overflow-hidden p-3 pt-0">
+            <div ref={pdfContainerRef} className="rounded-lg overflow-hidden bg-muted h-full">
               {doc.files[activeFileIndex]?.type === 'application/pdf' ? (
                 <iframe
                   src={doc.files[activeFileIndex].base64}
@@ -357,131 +457,31 @@ const DocumentDetail: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Extraction Panel */}
-        <div className="space-y-6">
-          {/* Pattern Select + Status */}
-          <Card>
-            <CardContent className="pt-6 space-y-4">
-              {/* Pattern selector - always visible */}
-              <div className="space-y-2">
-                <Label>Modelo do Holerite</Label>
-                <Select value={selectedPattern} onValueChange={handlePatternChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o modelo..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PATTERN_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-
-              {/* Status */}
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                  {doc.status === 'pending' && (
-                    <>
-                      <AlertCircle className="h-6 w-6 text-yellow-500" />
-                      <div>
-                        <p className="font-medium">Aguardando extração</p>
-                        <p className="text-sm text-muted-foreground">Clique para extrair os dados</p>
-                      </div>
-                    </>
-                  )}
-                  {doc.status === 'extracting' && (
-                    <>
-                      <Loader2 className="h-6 w-6 text-primary animate-spin" />
-                      <div>
-                        <p className="font-medium">Extraindo dados...</p>
-                        <p className="text-sm text-muted-foreground">{extractionProgress}% concluído</p>
-                      </div>
-                    </>
-                  )}
-                  {doc.status === 'extracted' && (
-                    <>
-                      <CheckCircle className="h-6 w-6 text-primary" />
-                      <div>
-                        <p className="font-medium">Dados extraídos</p>
-                        <p className="text-sm text-muted-foreground">
-                          {doc.extractedData?.months.length} período(s)
-                          {doc.extractedData?.payslipPattern && ` • Modelo ${doc.extractedData.payslipPattern}`}
-                        </p>
-                      </div>
-                    </>
-                  )}
-                  {doc.status === 'error' && (
-                    <>
-                      <AlertCircle className="h-6 w-6 text-destructive" />
-                      <div>
-                        <p className="font-medium">Erro na extração</p>
-                        <p className="text-sm text-muted-foreground">Tente novamente</p>
-                      </div>
-                    </>
-                  )}
-                </div>
-                
-                <div className="flex gap-2">
-                  {(doc.status === 'pending' || doc.status === 'error') && (
-                    <Button
-                      onClick={handleExtraction}
-                      disabled={isExtracting}
-                      className="gradient-primary text-primary-foreground"
-                    >
-                      {isExtracting ? (
-                        <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Extraindo...</>
-                      ) : 'Extrair Dados'}
-                    </Button>
-                  )}
-                  
-                  {doc.status === 'extracted' && (
-                    <>
-                      <Button variant="outline" size="sm" onClick={handleExtraction} disabled={isExtracting}>
-                        <RefreshCw className="h-4 w-4 mr-1" />
-                        Re-extrair
-                      </Button>
-                      <Button onClick={() => setExportDialogOpen(true)}>
-                        <FileSpreadsheet className="h-4 w-4 mr-2" />
-                        Exportar
-                      </Button>
-                    </>
-                  )}
-                </div>
-              </div>
-              
-              {isExtracting && (
-                <div className="h-2 bg-muted rounded-full overflow-hidden">
-                  <div
-                    className="h-full gradient-primary transition-all duration-300"
-                    style={{ width: `${extractionProgress}%` }}
-                  />
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          {/* Extracted Data */}
-          {doc.extractedData && doc.extractedData.months.map((month, monthIndex) => (
-            <Card key={monthIndex}>
-              <CardHeader className="pb-3">
+        {/* Extracted Data - scrollable */}
+        <Card className="flex flex-col overflow-hidden">
+          <CardHeader className="py-3 flex-shrink-0">
+            <CardTitle className="text-base">Dados Extraídos</CardTitle>
+            <CardDescription className="text-xs">Clique em qualquer valor para editar</CardDescription>
+          </CardHeader>
+          <CardContent className="flex-1 overflow-auto p-3 pt-0 space-y-4">
+            {doc.extractedData && doc.extractedData.months.map((month, monthIndex) => (
+              <div key={monthIndex} className="space-y-4">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-lg">
+                  <h3 className="font-semibold text-sm">
                     {month.competencia || month.month}
-                  </CardTitle>
+                  </h3>
                   <Button
                     size="icon"
                     variant="ghost"
-                    className="h-8 w-8 text-destructive"
+                    className="h-7 w-7 text-destructive"
                     onClick={() => deleteRow(monthIndex)}
                   >
-                    <Trash2 className="h-4 w-4" />
+                    <Trash2 className="h-3.5 w-3.5" />
                   </Button>
                 </div>
-                <CardDescription>Clique em qualquer valor para editar</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-4">
+
                 {/* Header info */}
-                <div className="grid grid-cols-2 gap-3 text-sm">
+                <div className="grid grid-cols-2 gap-2 text-sm">
                   {[
                     { label: 'Empresa', field: 'empresa' },
                     { label: 'CNPJ', field: 'cnpj' },
@@ -497,7 +497,7 @@ const DocumentDetail: React.FC = () => {
                   ].map(({ label, field }) => (
                     <div key={field}>
                       <p className="text-muted-foreground text-xs">{label}</p>
-                      <div className="font-medium">
+                      <div className="font-medium text-xs">
                         {renderEditableCell((month as any)[field] || '', monthIndex, field)}
                       </div>
                     </div>
@@ -506,7 +506,7 @@ const DocumentDetail: React.FC = () => {
 
                 {/* Events table */}
                 {month.eventos && month.eventos.length > 0 && (
-                  <div className="rounded-lg border overflow-auto max-h-80">
+                  <div className="rounded-lg border overflow-auto">
                     <Table>
                       <TableHeader>
                         <TableRow>
@@ -543,7 +543,7 @@ const DocumentDetail: React.FC = () => {
                 )}
 
                 {/* Footer totals */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-sm p-3 rounded-lg bg-muted/50">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm p-3 rounded-lg bg-muted/50">
                   {[
                     { label: 'Salário Base', field: 'salarioBase' },
                     { label: 'Total Vencimentos', field: 'totalVencimentos' },
@@ -560,16 +560,26 @@ const DocumentDetail: React.FC = () => {
                   ].map(({ label, field }) => (
                     <div key={field}>
                       <p className="text-muted-foreground text-xs">{label}</p>
-                      <div className="font-medium">
+                      <div className="font-medium text-xs">
                         {renderEditableCell((month as any)[field] || '', monthIndex, field)}
                       </div>
                     </div>
                   ))}
                 </div>
-              </CardContent>
-            </Card>
-          ))}
-        </div>
+
+                {monthIndex < (doc.extractedData?.months.length || 0) - 1 && (
+                  <hr className="border-border" />
+                )}
+              </div>
+            ))}
+
+            {!doc.extractedData && (
+              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                <p>Extraia os dados para visualizá-los aqui</p>
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
       {/* Export Dialog */}
