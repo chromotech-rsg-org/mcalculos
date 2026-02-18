@@ -1,6 +1,6 @@
 import React, { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Loader2, Eye, Download } from 'lucide-react';
+import { Loader2, Eye, Download, FileSpreadsheet, FileText, Trash2 } from 'lucide-react';
 import LordIcon from '@/components/ui/lord-icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -8,9 +8,11 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
 import { getDocuments, deleteDocument } from '@/lib/storage';
 import { Document } from '@/types';
+import { exportToExcel } from '@/lib/export';
 import UploadModal from '@/components/documents/UploadModal';
 
 const Documents: React.FC = () => {
@@ -289,38 +291,89 @@ const Documents: React.FC = () => {
                     </div>
                   </div>
                   
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        navigate(`/documents/${doc.id}`);
-                      }}
-                    >
-                      <Eye className="h-5 w-5 text-primary" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        downloadFile(doc);
-                      }}
-                    >
-                      <Download className="h-5 w-5 text-secondary" />
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        confirmDelete(doc.id);
-                      }}
-                    >
-                      <LordIcon icon="trash" size={20} trigger="hover" colors={{ primary: '#dc2626', secondary: '#dc2626' }} />
-                    </Button>
-                  </div>
+                  <TooltipProvider delayDuration={300}>
+                    <div className="flex items-center gap-1">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/documents/${doc.id}`);
+                            }}
+                          >
+                            <Eye className="h-5 w-5 text-primary" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Ver</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              downloadFile(doc);
+                            }}
+                          >
+                            <Download className="h-5 w-5 text-secondary" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Baixar PDF</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigate(`/documents/${doc.id}`);
+                            }}
+                          >
+                            <FileText className="h-5 w-5 text-accent-foreground" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Dados Extraídos</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            disabled={doc.status !== 'extracted'}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (doc.extractedData) {
+                                exportToExcel(doc.extractedData, doc.name);
+                                toast({ title: 'Excel exportado!', description: 'Arquivo baixado com sucesso.' });
+                              }
+                            }}
+                          >
+                            <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Exportar Excel</TooltipContent>
+                      </Tooltip>
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              confirmDelete(doc.id);
+                            }}
+                          >
+                            <Trash2 className="h-5 w-5 text-destructive" />
+                          </Button>
+                        </TooltipTrigger>
+                        <TooltipContent>Excluir</TooltipContent>
+                      </Tooltip>
+                    </div>
+                  </TooltipProvider>
                 </div>
               ))}
             </div>

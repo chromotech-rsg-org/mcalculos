@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Download, Trash2, Edit2, Save, X, Loader2, FileSpreadsheet, AlertCircle, CheckCircle, RefreshCw } from 'lucide-react';
+import { ArrowLeft, FileText, Download, Trash2, Edit2, Save, X, Loader2, FileSpreadsheet, AlertCircle, CheckCircle, RefreshCw, LayoutList } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -15,6 +15,8 @@ import { getDocumentById, saveDocument, deleteDocument } from '@/lib/storage';
 import { Document, ExtractedData, ExtractedMonth } from '@/types';
 import { extractDataFromPDF, extractDataFromImage } from '@/lib/extraction';
 import { exportToExcel, exportToCSV } from '@/lib/export';
+import DataTableView from '@/components/documents/DataTableView';
+import ExportColumnSelector from '@/components/documents/ExportColumnSelector';
 
 const PATTERN_OPTIONS = [
   { value: 'auto', label: 'Auto-detectar' },
@@ -214,7 +216,6 @@ const DocumentDetail: React.FC = () => {
       title: 'Exportação concluída!',
       description: `Arquivo ${format.toUpperCase()} baixado com sucesso.`,
     });
-    setExportDialogOpen(false);
   };
 
   const handleDelete = () => {
@@ -457,123 +458,142 @@ const DocumentDetail: React.FC = () => {
           </CardContent>
         </Card>
 
-        {/* Extracted Data - scrollable */}
+        {/* Extracted Data - scrollable with tabs */}
         <Card className="flex flex-col overflow-hidden">
           <CardHeader className="py-3 flex-shrink-0">
             <CardTitle className="text-base">Dados Extraídos</CardTitle>
-            <CardDescription className="text-xs">Clique em qualquer valor para editar</CardDescription>
           </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-3 pt-0 space-y-4">
-            {doc.extractedData && doc.extractedData.months.map((month, monthIndex) => (
-              <div key={monthIndex} className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-sm">
-                    {month.competencia || month.month}
-                  </h3>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-7 w-7 text-destructive"
-                    onClick={() => deleteRow(monthIndex)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </Button>
-                </div>
+          <CardContent className="flex-1 overflow-auto p-3 pt-0">
+            {doc.extractedData ? (
+              <Tabs defaultValue="detail" className="h-full flex flex-col">
+                <TabsList className="mb-3 flex-shrink-0">
+                  <TabsTrigger value="detail">
+                    <FileText className="h-4 w-4 mr-1" />
+                    Detalhado
+                  </TabsTrigger>
+                  <TabsTrigger value="table">
+                    <LayoutList className="h-4 w-4 mr-1" />
+                    Lista
+                  </TabsTrigger>
+                </TabsList>
 
-                {/* Header info */}
-                <div className="grid grid-cols-2 gap-2 text-sm">
-                  {[
-                    { label: 'Empresa', field: 'empresa' },
-                    { label: 'CNPJ', field: 'cnpj' },
-                    { label: 'Centro de Custo', field: 'centroCusto' },
-                    { label: 'Tipo de Folha', field: 'tipoFolha' },
-                    { label: 'Cód. Funcionário', field: 'codigoFuncionario' },
-                    { label: 'Nome Funcionário', field: 'nomeFuncionario' },
-                    { label: 'CBO', field: 'cbo' },
-                    { label: 'Departamento', field: 'departamento' },
-                    { label: 'Filial', field: 'filial' },
-                    { label: 'Cargo', field: 'cargo' },
-                    { label: 'Data Admissão', field: 'dataAdmissao' },
-                  ].map(({ label, field }) => (
-                    <div key={field}>
-                      <p className="text-muted-foreground text-xs">{label}</p>
-                      <div className="font-medium text-xs">
-                        {renderEditableCell((month as any)[field] || '', monthIndex, field)}
+                <TabsContent value="detail" className="flex-1 overflow-auto space-y-4 mt-0">
+                  <CardDescription className="text-xs">Clique em qualquer valor para editar</CardDescription>
+                  {doc.extractedData.months.map((month, monthIndex) => (
+                    <div key={monthIndex} className="space-y-4">
+                      <div className="flex items-center justify-between">
+                        <h3 className="font-semibold text-sm">
+                          {month.competencia || month.month}
+                        </h3>
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-7 w-7 text-destructive"
+                          onClick={() => deleteRow(monthIndex)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </Button>
                       </div>
-                    </div>
-                  ))}
-                </div>
 
-                {/* Events table */}
-                {month.eventos && month.eventos.length > 0 && (
-                  <div className="rounded-lg border overflow-auto">
-                    <Table>
-                      <TableHeader>
-                        <TableRow>
-                          <TableHead className="text-xs">Código</TableHead>
-                          <TableHead className="text-xs">Descrição</TableHead>
-                          <TableHead className="text-xs">Ref.</TableHead>
-                          <TableHead className="text-xs">Vencimento</TableHead>
-                          <TableHead className="text-xs">Desconto</TableHead>
-                        </TableRow>
-                      </TableHeader>
-                      <TableBody>
-                        {month.eventos.map((ev, evIdx) => (
-                          <TableRow key={evIdx}>
-                            <TableCell className="text-xs py-1">
-                              {renderEditableCell(ev.codigo, monthIndex, 'eventos', 'codigo', evIdx)}
-                            </TableCell>
-                            <TableCell className="text-xs py-1">
-                              {renderEditableCell(ev.descricao, monthIndex, 'eventos', 'descricao', evIdx)}
-                            </TableCell>
-                            <TableCell className="text-xs py-1">
-                              {renderEditableCell(ev.referencia, monthIndex, 'eventos', 'referencia', evIdx)}
-                            </TableCell>
-                            <TableCell className="text-xs py-1">
-                              {renderEditableCell(ev.vencimento, monthIndex, 'eventos', 'vencimento', evIdx)}
-                            </TableCell>
-                            <TableCell className="text-xs py-1">
-                              {renderEditableCell(ev.desconto, monthIndex, 'eventos', 'desconto', evIdx)}
-                            </TableCell>
-                          </TableRow>
+                      {/* Header info */}
+                      <div className="grid grid-cols-2 gap-2 text-sm">
+                        {[
+                          { label: 'Empresa', field: 'empresa' },
+                          { label: 'CNPJ', field: 'cnpj' },
+                          { label: 'Centro de Custo', field: 'centroCusto' },
+                          { label: 'Tipo de Folha', field: 'tipoFolha' },
+                          { label: 'Cód. Funcionário', field: 'codigoFuncionario' },
+                          { label: 'Nome Funcionário', field: 'nomeFuncionario' },
+                          { label: 'CBO', field: 'cbo' },
+                          { label: 'Departamento', field: 'departamento' },
+                          { label: 'Filial', field: 'filial' },
+                          { label: 'Cargo', field: 'cargo' },
+                          { label: 'Data Admissão', field: 'dataAdmissao' },
+                        ].map(({ label, field }) => (
+                          <div key={field}>
+                            <p className="text-muted-foreground text-xs">{label}</p>
+                            <div className="font-medium text-xs">
+                              {renderEditableCell((month as any)[field] || '', monthIndex, field)}
+                            </div>
+                          </div>
                         ))}
-                      </TableBody>
-                    </Table>
-                  </div>
-                )}
-
-                {/* Footer totals */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm p-3 rounded-lg bg-muted/50">
-                  {[
-                    { label: 'Salário Base', field: 'salarioBase' },
-                    { label: 'Total Vencimentos', field: 'totalVencimentos' },
-                    { label: 'Total Descontos', field: 'totalDescontos' },
-                    { label: 'Valor Líquido', field: 'valorLiquido' },
-                    { label: 'Base INSS', field: 'baseInss' },
-                    { label: 'Base FGTS', field: 'baseFgts' },
-                    { label: 'FGTS do Mês', field: 'fgtsMes' },
-                    { label: 'Base IRRF', field: 'baseIrrf' },
-                    { label: 'IRRF', field: 'irrf' },
-                    { label: 'Banco', field: 'banco' },
-                    { label: 'Agência', field: 'agencia' },
-                    { label: 'Conta Corrente', field: 'contaCorrente' },
-                  ].map(({ label, field }) => (
-                    <div key={field}>
-                      <p className="text-muted-foreground text-xs">{label}</p>
-                      <div className="font-medium text-xs">
-                        {renderEditableCell((month as any)[field] || '', monthIndex, field)}
                       </div>
+
+                      {/* Events table */}
+                      {month.eventos && month.eventos.length > 0 && (
+                        <div className="rounded-lg border overflow-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow>
+                                <TableHead className="text-xs">Código</TableHead>
+                                <TableHead className="text-xs">Descrição</TableHead>
+                                <TableHead className="text-xs">Ref.</TableHead>
+                                <TableHead className="text-xs">Vencimento</TableHead>
+                                <TableHead className="text-xs">Desconto</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {month.eventos.map((ev, evIdx) => (
+                                <TableRow key={evIdx}>
+                                  <TableCell className="text-xs py-1">
+                                    {renderEditableCell(ev.codigo, monthIndex, 'eventos', 'codigo', evIdx)}
+                                  </TableCell>
+                                  <TableCell className="text-xs py-1">
+                                    {renderEditableCell(ev.descricao, monthIndex, 'eventos', 'descricao', evIdx)}
+                                  </TableCell>
+                                  <TableCell className="text-xs py-1">
+                                    {renderEditableCell(ev.referencia, monthIndex, 'eventos', 'referencia', evIdx)}
+                                  </TableCell>
+                                  <TableCell className="text-xs py-1">
+                                    {renderEditableCell(ev.vencimento, monthIndex, 'eventos', 'vencimento', evIdx)}
+                                  </TableCell>
+                                  <TableCell className="text-xs py-1">
+                                    {renderEditableCell(ev.desconto, monthIndex, 'eventos', 'desconto', evIdx)}
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      )}
+
+                      {/* Footer totals */}
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm p-3 rounded-lg bg-muted/50">
+                        {[
+                          { label: 'Salário Base', field: 'salarioBase' },
+                          { label: 'Total Vencimentos', field: 'totalVencimentos' },
+                          { label: 'Total Descontos', field: 'totalDescontos' },
+                          { label: 'Valor Líquido', field: 'valorLiquido' },
+                          { label: 'Base INSS', field: 'baseInss' },
+                          { label: 'Base FGTS', field: 'baseFgts' },
+                          { label: 'FGTS do Mês', field: 'fgtsMes' },
+                          { label: 'Base IRRF', field: 'baseIrrf' },
+                          { label: 'IRRF', field: 'irrf' },
+                          { label: 'Banco', field: 'banco' },
+                          { label: 'Agência', field: 'agencia' },
+                          { label: 'Conta Corrente', field: 'contaCorrente' },
+                        ].map(({ label, field }) => (
+                          <div key={field}>
+                            <p className="text-muted-foreground text-xs">{label}</p>
+                            <div className="font-medium text-xs">
+                              {renderEditableCell((month as any)[field] || '', monthIndex, field)}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {monthIndex < (doc.extractedData?.months.length || 0) - 1 && (
+                        <hr className="border-border" />
+                      )}
                     </div>
                   ))}
-                </div>
+                </TabsContent>
 
-                {monthIndex < (doc.extractedData?.months.length || 0) - 1 && (
-                  <hr className="border-border" />
-                )}
-              </div>
-            ))}
-
-            {!doc.extractedData && (
+                <TabsContent value="table" className="flex-1 overflow-auto mt-0">
+                  <DataTableView data={doc.extractedData} />
+                </TabsContent>
+              </Tabs>
+            ) : (
               <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
                 <p>Extraia os dados para visualizá-los aqui</p>
               </div>
@@ -582,26 +602,15 @@ const DocumentDetail: React.FC = () => {
         </Card>
       </div>
 
-      {/* Export Dialog */}
-      <Dialog open={exportDialogOpen} onOpenChange={setExportDialogOpen}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>Exportar Dados</DialogTitle>
-            <DialogDescription>
-              Escolha o formato de exportação
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter className="flex-col sm:flex-row gap-2">
-            <Button variant="outline" onClick={() => handleExport('csv')}>
-              Exportar CSV
-            </Button>
-            <Button onClick={() => handleExport('xlsx')} className="gradient-primary text-primary-foreground">
-              <FileSpreadsheet className="h-4 w-4 mr-2" />
-              Exportar Excel
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Export Dialog with Column Selector */}
+      {doc.extractedData && (
+        <ExportColumnSelector
+          open={exportDialogOpen}
+          onOpenChange={setExportDialogOpen}
+          data={doc.extractedData}
+          filename={doc.name}
+        />
+      )}
 
       {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
