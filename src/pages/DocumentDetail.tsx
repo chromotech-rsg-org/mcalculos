@@ -415,192 +415,208 @@ const DocumentDetail: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Side by side: PDF Preview + Extracted Data with matching scroll */}
-      <div className="grid lg:grid-cols-2 gap-4" style={{ height: 'calc(100vh - 280px)' }}>
-        {/* PDF Preview */}
-        <Card className="flex flex-col overflow-hidden">
-          <CardHeader className="py-3 flex-shrink-0">
-            <div className="flex items-center justify-between">
-              <CardTitle className="text-base">Preview do Documento</CardTitle>
-              {doc.files.length > 1 && (
-                <div className="flex gap-1">
-                  {doc.files.map((file, index) => (
-                    <Button
-                      key={file.id}
-                      variant={activeFileIndex === index ? 'default' : 'outline'}
-                      size="sm"
-                      className="h-7 text-xs"
-                      onClick={() => setActiveFileIndex(index)}
-                    >
-                      Arq. {index + 1}
-                    </Button>
-                  ))}
-                </div>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-hidden p-3 pt-0">
-            <div ref={pdfContainerRef} className="rounded-lg overflow-hidden bg-muted h-full">
-              {doc.files[activeFileIndex]?.type === 'application/pdf' ? (
-                <iframe
-                  src={doc.files[activeFileIndex].base64}
-                  className="w-full h-full"
-                  title="PDF Preview"
-                />
-              ) : (
-                <img
-                  src={doc.files[activeFileIndex]?.base64}
-                  alt="Document preview"
-                  className="w-full h-full object-contain"
-                />
-              )}
-            </div>
-          </CardContent>
-        </Card>
+      {/* View mode tabs */}
+      <Tabs defaultValue="detail" className="space-y-4">
+        <TabsList>
+          <TabsTrigger value="detail">
+            <FileText className="h-4 w-4 mr-1" />
+            Detalhado
+          </TabsTrigger>
+          <TabsTrigger value="table">
+            <LayoutList className="h-4 w-4 mr-1" />
+            Lista
+          </TabsTrigger>
+        </TabsList>
 
-        {/* Extracted Data - scrollable with tabs */}
-        <Card className="flex flex-col overflow-hidden">
-          <CardHeader className="py-3 flex-shrink-0">
-            <CardTitle className="text-base">Dados Extraídos</CardTitle>
-          </CardHeader>
-          <CardContent className="flex-1 overflow-auto p-3 pt-0">
-            {doc.extractedData ? (
-              <Tabs defaultValue="detail" className="h-full flex flex-col">
-                <TabsList className="mb-3 flex-shrink-0">
-                  <TabsTrigger value="detail">
-                    <FileText className="h-4 w-4 mr-1" />
-                    Detalhado
-                  </TabsTrigger>
-                  <TabsTrigger value="table">
-                    <LayoutList className="h-4 w-4 mr-1" />
-                    Lista
-                  </TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="detail" className="flex-1 overflow-auto space-y-4 mt-0">
-                  <CardDescription className="text-xs">Clique em qualquer valor para editar</CardDescription>
-                  {doc.extractedData.months.map((month, monthIndex) => (
-                    <div key={monthIndex} className="space-y-4">
-                      <div className="flex items-center justify-between">
-                        <h3 className="font-semibold text-sm">
-                          {month.competencia || month.month}
-                        </h3>
+        {/* Detalhado: side by side PDF + Extracted Data */}
+        <TabsContent value="detail" className="mt-0">
+          <div className="grid lg:grid-cols-2 gap-4" style={{ height: 'calc(100vh - 340px)' }}>
+            {/* PDF Preview */}
+            <Card className="flex flex-col overflow-hidden">
+              <CardHeader className="py-3 flex-shrink-0">
+                <div className="flex items-center justify-between">
+                  <CardTitle className="text-base">Preview do Documento</CardTitle>
+                  {doc.files.length > 1 && (
+                    <div className="flex gap-1">
+                      {doc.files.map((file, index) => (
                         <Button
-                          size="icon"
-                          variant="ghost"
-                          className="h-7 w-7 text-destructive"
-                          onClick={() => deleteRow(monthIndex)}
+                          key={file.id}
+                          variant={activeFileIndex === index ? 'default' : 'outline'}
+                          size="sm"
+                          className="h-7 text-xs"
+                          onClick={() => setActiveFileIndex(index)}
                         >
-                          <Trash2 className="h-3.5 w-3.5" />
+                          Arq. {index + 1}
                         </Button>
-                      </div>
-
-                      {/* Header info */}
-                      <div className="grid grid-cols-2 gap-2 text-sm">
-                        {[
-                          { label: 'Empresa', field: 'empresa' },
-                          { label: 'CNPJ', field: 'cnpj' },
-                          { label: 'Centro de Custo', field: 'centroCusto' },
-                          { label: 'Tipo de Folha', field: 'tipoFolha' },
-                          { label: 'Cód. Funcionário', field: 'codigoFuncionario' },
-                          { label: 'Nome Funcionário', field: 'nomeFuncionario' },
-                          { label: 'CBO', field: 'cbo' },
-                          { label: 'Departamento', field: 'departamento' },
-                          { label: 'Filial', field: 'filial' },
-                          { label: 'Cargo', field: 'cargo' },
-                          { label: 'Data Admissão', field: 'dataAdmissao' },
-                        ].map(({ label, field }) => (
-                          <div key={field}>
-                            <p className="text-muted-foreground text-xs">{label}</p>
-                            <div className="font-medium text-xs">
-                              {renderEditableCell((month as any)[field] || '', monthIndex, field)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {/* Events table */}
-                      {month.eventos && month.eventos.length > 0 && (
-                        <div className="rounded-lg border overflow-auto">
-                          <Table>
-                            <TableHeader>
-                              <TableRow>
-                                <TableHead className="text-xs">Código</TableHead>
-                                <TableHead className="text-xs">Descrição</TableHead>
-                                <TableHead className="text-xs">Ref.</TableHead>
-                                <TableHead className="text-xs">Vencimento</TableHead>
-                                <TableHead className="text-xs">Desconto</TableHead>
-                              </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                              {month.eventos.map((ev, evIdx) => (
-                                <TableRow key={evIdx}>
-                                  <TableCell className="text-xs py-1">
-                                    {renderEditableCell(ev.codigo, monthIndex, 'eventos', 'codigo', evIdx)}
-                                  </TableCell>
-                                  <TableCell className="text-xs py-1">
-                                    {renderEditableCell(ev.descricao, monthIndex, 'eventos', 'descricao', evIdx)}
-                                  </TableCell>
-                                  <TableCell className="text-xs py-1">
-                                    {renderEditableCell(ev.referencia, monthIndex, 'eventos', 'referencia', evIdx)}
-                                  </TableCell>
-                                  <TableCell className="text-xs py-1">
-                                    {renderEditableCell(ev.vencimento, monthIndex, 'eventos', 'vencimento', evIdx)}
-                                  </TableCell>
-                                  <TableCell className="text-xs py-1">
-                                    {renderEditableCell(ev.desconto, monthIndex, 'eventos', 'desconto', evIdx)}
-                                  </TableCell>
-                                </TableRow>
-                              ))}
-                            </TableBody>
-                          </Table>
-                        </div>
-                      )}
-
-                      {/* Footer totals */}
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm p-3 rounded-lg bg-muted/50">
-                        {[
-                          { label: 'Salário Base', field: 'salarioBase' },
-                          { label: 'Total Vencimentos', field: 'totalVencimentos' },
-                          { label: 'Total Descontos', field: 'totalDescontos' },
-                          { label: 'Valor Líquido', field: 'valorLiquido' },
-                          { label: 'Base INSS', field: 'baseInss' },
-                          { label: 'Base FGTS', field: 'baseFgts' },
-                          { label: 'FGTS do Mês', field: 'fgtsMes' },
-                          { label: 'Base IRRF', field: 'baseIrrf' },
-                          { label: 'IRRF', field: 'irrf' },
-                          { label: 'Banco', field: 'banco' },
-                          { label: 'Agência', field: 'agencia' },
-                          { label: 'Conta Corrente', field: 'contaCorrente' },
-                        ].map(({ label, field }) => (
-                          <div key={field}>
-                            <p className="text-muted-foreground text-xs">{label}</p>
-                            <div className="font-medium text-xs">
-                              {renderEditableCell((month as any)[field] || '', monthIndex, field)}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      {monthIndex < (doc.extractedData?.months.length || 0) - 1 && (
-                        <hr className="border-border" />
-                      )}
+                      ))}
                     </div>
-                  ))}
-                </TabsContent>
+                  )}
+                </div>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-hidden p-3 pt-0">
+                <div ref={pdfContainerRef} className="rounded-lg overflow-hidden bg-muted h-full">
+                  {doc.files[activeFileIndex]?.type === 'application/pdf' ? (
+                    <iframe
+                      src={doc.files[activeFileIndex].base64}
+                      className="w-full h-full"
+                      title="PDF Preview"
+                    />
+                  ) : (
+                    <img
+                      src={doc.files[activeFileIndex]?.base64}
+                      alt="Document preview"
+                      className="w-full h-full object-contain"
+                    />
+                  )}
+                </div>
+              </CardContent>
+            </Card>
 
-                <TabsContent value="table" className="flex-1 overflow-auto mt-0">
-                  <DataTableView data={doc.extractedData} />
-                </TabsContent>
-              </Tabs>
-            ) : (
-              <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+            {/* Extracted Data */}
+            <Card className="flex flex-col overflow-hidden">
+              <CardHeader className="py-3 flex-shrink-0">
+                <CardTitle className="text-base">Dados Extraídos</CardTitle>
+              </CardHeader>
+              <CardContent className="flex-1 overflow-auto p-3 pt-0">
+                {doc.extractedData ? (
+                  <div className="space-y-4">
+                    <CardDescription className="text-xs">Clique em qualquer valor para editar</CardDescription>
+                    {doc.extractedData.months.map((month, monthIndex) => (
+                      <div key={monthIndex} className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <h3 className="font-semibold text-sm">
+                            {month.competencia || month.month}
+                          </h3>
+                          <Button
+                            size="icon"
+                            variant="ghost"
+                            className="h-7 w-7 text-destructive"
+                            onClick={() => deleteRow(monthIndex)}
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+
+                        {/* Header info */}
+                        <div className="grid grid-cols-2 gap-2 text-sm">
+                          {[
+                            { label: 'Empresa', field: 'empresa' },
+                            { label: 'CNPJ', field: 'cnpj' },
+                            { label: 'Centro de Custo', field: 'centroCusto' },
+                            { label: 'Tipo de Folha', field: 'tipoFolha' },
+                            { label: 'Cód. Funcionário', field: 'codigoFuncionario' },
+                            { label: 'Nome Funcionário', field: 'nomeFuncionario' },
+                            { label: 'CBO', field: 'cbo' },
+                            { label: 'Departamento', field: 'departamento' },
+                            { label: 'Filial', field: 'filial' },
+                            { label: 'Cargo', field: 'cargo' },
+                            { label: 'Data Admissão', field: 'dataAdmissao' },
+                          ].map(({ label, field }) => (
+                            <div key={field}>
+                              <p className="text-muted-foreground text-xs">{label}</p>
+                              <div className="font-medium text-xs">
+                                {renderEditableCell((month as any)[field] || '', monthIndex, field)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Events table */}
+                        {month.eventos && month.eventos.length > 0 && (
+                          <div className="rounded-lg border overflow-auto">
+                            <Table>
+                              <TableHeader>
+                                <TableRow>
+                                  <TableHead className="text-xs">Código</TableHead>
+                                  <TableHead className="text-xs">Descrição</TableHead>
+                                  <TableHead className="text-xs">Ref.</TableHead>
+                                  <TableHead className="text-xs">Vencimento</TableHead>
+                                  <TableHead className="text-xs">Desconto</TableHead>
+                                </TableRow>
+                              </TableHeader>
+                              <TableBody>
+                                {month.eventos.map((ev, evIdx) => (
+                                  <TableRow key={evIdx}>
+                                    <TableCell className="text-xs py-1">
+                                      {renderEditableCell(ev.codigo, monthIndex, 'eventos', 'codigo', evIdx)}
+                                    </TableCell>
+                                    <TableCell className="text-xs py-1">
+                                      {renderEditableCell(ev.descricao, monthIndex, 'eventos', 'descricao', evIdx)}
+                                    </TableCell>
+                                    <TableCell className="text-xs py-1">
+                                      {renderEditableCell(ev.referencia, monthIndex, 'eventos', 'referencia', evIdx)}
+                                    </TableCell>
+                                    <TableCell className="text-xs py-1">
+                                      {renderEditableCell(ev.vencimento, monthIndex, 'eventos', 'vencimento', evIdx)}
+                                    </TableCell>
+                                    <TableCell className="text-xs py-1">
+                                      {renderEditableCell(ev.desconto, monthIndex, 'eventos', 'desconto', evIdx)}
+                                    </TableCell>
+                                  </TableRow>
+                                ))}
+                              </TableBody>
+                            </Table>
+                          </div>
+                        )}
+
+                        {/* Footer totals */}
+                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm p-3 rounded-lg bg-muted/50">
+                          {[
+                            { label: 'Salário Base', field: 'salarioBase' },
+                            { label: 'Total Vencimentos', field: 'totalVencimentos' },
+                            { label: 'Total Descontos', field: 'totalDescontos' },
+                            { label: 'Valor Líquido', field: 'valorLiquido' },
+                            { label: 'Base INSS', field: 'baseInss' },
+                            { label: 'Base FGTS', field: 'baseFgts' },
+                            { label: 'FGTS do Mês', field: 'fgtsMes' },
+                            { label: 'Base IRRF', field: 'baseIrrf' },
+                            { label: 'IRRF', field: 'irrf' },
+                            { label: 'Banco', field: 'banco' },
+                            { label: 'Agência', field: 'agencia' },
+                            { label: 'Conta Corrente', field: 'contaCorrente' },
+                          ].map(({ label, field }) => (
+                            <div key={field}>
+                              <p className="text-muted-foreground text-xs">{label}</p>
+                              <div className="font-medium text-xs">
+                                {renderEditableCell((month as any)[field] || '', monthIndex, field)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+
+                        {monthIndex < (doc.extractedData?.months.length || 0) - 1 && (
+                          <hr className="border-border" />
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                    <p>Extraia os dados para visualizá-los aqui</p>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        {/* Lista: full-width DataTable */}
+        <TabsContent value="table" className="mt-0">
+          {doc.extractedData ? (
+            <Card>
+              <CardContent className="p-4">
+                <DataTableView data={doc.extractedData} />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="flex items-center justify-center h-64 text-muted-foreground text-sm">
                 <p>Extraia os dados para visualizá-los aqui</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+      </Tabs>
 
       {/* Export Dialog with Column Selector */}
       {doc.extractedData && (
