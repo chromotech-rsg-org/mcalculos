@@ -12,8 +12,8 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/comp
 import { useToast } from '@/hooks/use-toast';
 import { getDocuments, deleteDocument } from '@/lib/storage';
 import { Document } from '@/types';
-import { exportToExcel } from '@/lib/export';
 import UploadModal from '@/components/documents/UploadModal';
+import ExportColumnSelector from '@/components/documents/ExportColumnSelector';
 
 const Documents: React.FC = () => {
   const { currentUser } = useAuth();
@@ -28,6 +28,8 @@ const Documents: React.FC = () => {
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [isDragging, setIsDragging] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [exportDialogOpen, setExportDialogOpen] = useState(false);
+  const [exportDoc, setExportDoc] = useState<Document | null>(null);
 
   const documents = currentUser ? getDocuments(currentUser.id) : [];
   
@@ -285,14 +287,23 @@ const Documents: React.FC = () => {
                         <span>{new Date(doc.createdAt).toLocaleDateString('pt-BR')}</span>
                       </div>
                     </div>
-                    
-                    <div className="flex items-center gap-1">
-                      {getStatusIcon(doc.status)}
-                    </div>
                   </div>
                   
                   <TooltipProvider delayDuration={300}>
                     <div className="flex items-center gap-1">
+                      <Tooltip>
+                        <TooltipTrigger asChild>
+                          <span>
+                            {getStatusIcon(doc.status)}
+                          </span>
+                        </TooltipTrigger>
+                        <TooltipContent>
+                          {doc.status === 'pending' && 'Pendente extração'}
+                          {doc.status === 'extracting' && 'Extraindo...'}
+                          {doc.status === 'extracted' && 'Dados já extraídos'}
+                          {doc.status === 'error' && 'Erro na extração'}
+                        </TooltipContent>
+                      </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
                           <Button
@@ -336,7 +347,9 @@ const Documents: React.FC = () => {
                             <FileText className="h-5 w-5 text-accent-foreground" />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Dados Extraídos</TooltipContent>
+                        <TooltipContent>
+                          {doc.status === 'extracted' ? 'Reextrair dados' : 'Extrair dados'}
+                        </TooltipContent>
                       </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -347,15 +360,15 @@ const Documents: React.FC = () => {
                             onClick={(e) => {
                               e.stopPropagation();
                               if (doc.extractedData) {
-                                exportToExcel(doc.extractedData, doc.name);
-                                toast({ title: 'Excel exportado!', description: 'Arquivo baixado com sucesso.' });
+                                setExportDoc(doc);
+                                setExportDialogOpen(true);
                               }
                             }}
                           >
                             <FileSpreadsheet className="h-5 w-5 text-emerald-600" />
                           </Button>
                         </TooltipTrigger>
-                        <TooltipContent>Exportar Excel</TooltipContent>
+                        <TooltipContent>Exportar dados</TooltipContent>
                       </Tooltip>
                       <Tooltip>
                         <TooltipTrigger asChild>
@@ -421,6 +434,15 @@ const Documents: React.FC = () => {
         userId={currentUser?.id || ''}
         onSuccess={handleUploadSuccess}
       />
+      {/* Export Column Selector */}
+      {exportDoc?.extractedData && (
+        <ExportColumnSelector
+          open={exportDialogOpen}
+          onOpenChange={setExportDialogOpen}
+          data={exportDoc.extractedData}
+          filename={exportDoc.name}
+        />
+      )}
     </div>
   );
 };
