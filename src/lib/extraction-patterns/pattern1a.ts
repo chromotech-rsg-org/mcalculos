@@ -81,8 +81,7 @@ const extractEmployee = (lines: LayoutLine[]): {
 } => {
   const result = { codigo: '', nome: '', cbo: '', departamento: '', filial: '', cargo: '', dataAdmissao: '' };
 
-  // Find the line containing "Codigo" and "Descricao" header (table header)
-  // Employee info is between header block and table header
+  // Find the table header line to know where employee zone ends
   let tableHeaderIdx = -1;
   for (let i = 0; i < lines.length; i++) {
     if (/C[oó]digo/i.test(lines[i].text) && /Descri[cç][aã]o/i.test(lines[i].text)) {
@@ -91,27 +90,74 @@ const extractEmployee = (lines: LayoutLine[]): {
     }
   }
   
-  // Employee data is typically lines 3-5 (after company header)
-  // Look for the line with a 3-digit code followed by uppercase name
   const searchEnd = tableHeaderIdx > 0 ? tableHeaderIdx : Math.min(10, lines.length);
   
   for (let i = 2; i < searchEnd; i++) {
     const line = lines[i];
+    const items = line.items;
     const text = line.text;
     
-    // Line with employee code + name + CBO: "001 NOME COMPLETO 123456 1 1"
-    const empMatch = text.match(/\b(\d{3})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s]{3,}?)\s+(\d{6})\b/);
-    if (empMatch) {
-      result.codigo = empMatch[1];
-      result.nome = empMatch[2].trim();
-      result.cbo = empMatch[3];
-      
-      // After CBO there may be departamento and filial
-      const afterCbo = text.substring(text.indexOf(empMatch[3]) + empMatch[3].length).trim();
-      const deptFilMatch = afterCbo.match(/^(\d+)\s+(\d+)/);
-      if (deptFilMatch) {
-        result.departamento = deptFilMatch[1];
-        result.filial = deptFilMatch[2];
+    // Strategy: use individual items to find employee data positionally
+    // Look for a 3-digit code item, then name items, then 6-digit CBO item
+    if (!result.codigo) {
+      const codeItem = items.find(it => /^\d{3}$/.test(it.str.trim()));
+      if (codeItem) {
+        result.codigo = codeItem.str.trim();
+        
+        // Items after code sorted by X - collect name parts (uppercase text) 
+        // and numeric fields (CBO, dept, filial)
+        const afterCode = items
+          .filter(it => it.x > codeItem.x)
+          .sort((a, b) => a.x - b.x);
+        
+        const nameParts: string[] = [];
+        const numericParts: string[] = [];
+        
+        for (const it of afterCode) {
+          const val = it.str.trim();
+          if (!val) continue;
+          
+          if (/^\d+$/.test(val)) {
+            numericParts.push(val);
+          } else if (/^[A-ZÀ-Ú\s.]+$/.test(val) && val.length >= 2) {
+            // Only add to name if we haven't started finding numbers yet
+            if (numericParts.length === 0) {
+              nameParts.push(val);
+            }
+          }
+        }
+        
+        if (nameParts.length > 0) {
+          result.nome = nameParts.join(' ').trim();
+        }
+        
+        // First 6-digit number is CBO, then dept, then filial
+        for (const num of numericParts) {
+          if (!result.cbo && num.length === 6) {
+            result.cbo = num;
+          } else if (result.cbo && !result.departamento) {
+            result.departamento = num;
+          } else if (result.cbo && result.departamento && !result.filial) {
+            result.filial = num;
+          }
+        }
+      }
+    }
+    
+    // Also try regex as fallback for the employee line
+    if (!result.codigo) {
+      const empMatch = text.match(/\b(\d{3})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s]{3,}?)\s+(\d{6})\b/);
+      if (empMatch) {
+        result.codigo = empMatch[1];
+        result.nome = empMatch[2].trim();
+        result.cbo = empMatch[3];
+        
+        const afterCbo = text.substring(text.indexOf(empMatch[3]) + empMatch[3].length).trim();
+        const deptFilMatch = afterCbo.match(/^(\d+)\s+(\d+)/);
+        if (deptFilMatch) {
+          result.departamento = deptFilMatch[1];
+          result.filial = deptFilMatch[2];
+        }
       }
     }
     
@@ -119,10 +165,8 @@ const extractEmployee = (lines: LayoutLine[]): {
     const admMatch = text.match(/Admiss[aã]o[:\s]*(\d{2}\/\d{2}\/\d{4})/i);
     if (admMatch) {
       result.dataAdmissao = admMatch[1];
-      // Cargo is text before "Admissao"
       const cargoText = text.substring(0, text.search(/Admiss[aã]o/i)).trim();
       if (cargoText) {
-        // Remove leading numbers if any
         result.cargo = cargoText.replace(/^\d+\s+/, '').trim();
       }
     }

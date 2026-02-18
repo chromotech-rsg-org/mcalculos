@@ -1,12 +1,22 @@
 import * as XLSX from 'xlsx';
 import { ExtractedData, PayslipEvent } from '@/types';
 
-const MAX_EVENTS = 20;
+/**
+ * Determine the max number of events across all months
+ */
+const getMaxEvents = (data: ExtractedData): number => {
+  let max = 0;
+  for (const month of data.months) {
+    const count = (month.eventos || []).length;
+    if (count > max) max = count;
+  }
+  return Math.max(max, 1); // at least 1
+};
 
 /**
  * Build a single row per month matching the exact Excel format
  */
-const buildExcelRows = (data: ExtractedData): Record<string, string>[] => {
+const buildExcelRows = (data: ExtractedData, maxEvents: number): Record<string, string>[] => {
   return data.months.map(month => {
     const row: Record<string, string> = {};
 
@@ -24,9 +34,9 @@ const buildExcelRows = (data: ExtractedData): Record<string, string>[] => {
     row['Filial'] = month.filial || '';
     row['Cargo'] = month.cargo || '';
 
-    // Event lines 1-20
+    // Event lines - only up to maxEvents
     const eventos = month.eventos || [];
-    for (let i = 0; i < MAX_EVENTS; i++) {
+    for (let i = 0; i < maxEvents; i++) {
       const n = i + 1;
       const ev: PayslipEvent | undefined = eventos[i];
       row[`Código Evento linha ${n}`] = ev?.codigo || '';
@@ -56,16 +66,16 @@ const buildExcelRows = (data: ExtractedData): Record<string, string>[] => {
 };
 
 /**
- * Build headers in the exact order
+ * Build headers in the exact order, with dynamic event count
  */
-const getOrderedHeaders = (): string[] => {
+const getOrderedHeaders = (maxEvents: number): string[] => {
   const headers = [
     'Empresa', 'CNPJ', 'Centro de Custo', 'Tipo de Folha', 'Competência',
     'Folha Nº', 'Código Funcionário', 'Nome Funcionário', 'CBO',
     'Departamento', 'Filial', 'Cargo',
   ];
 
-  for (let i = 1; i <= MAX_EVENTS; i++) {
+  for (let i = 1; i <= maxEvents; i++) {
     headers.push(
       `Código Evento linha ${i}`,
       `Descrição Evento linha ${i}`,
@@ -85,8 +95,9 @@ const getOrderedHeaders = (): string[] => {
 };
 
 export const exportToExcel = (data: ExtractedData, filename: string): void => {
-  const rows = buildExcelRows(data);
-  const headers = getOrderedHeaders();
+  const maxEvents = getMaxEvents(data);
+  const rows = buildExcelRows(data, maxEvents);
+  const headers = getOrderedHeaders(maxEvents);
 
   const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
 
@@ -99,8 +110,9 @@ export const exportToExcel = (data: ExtractedData, filename: string): void => {
 };
 
 export const exportToCSV = (data: ExtractedData, filename: string): void => {
-  const rows = buildExcelRows(data);
-  const headers = getOrderedHeaders();
+  const maxEvents = getMaxEvents(data);
+  const rows = buildExcelRows(data, maxEvents);
+  const headers = getOrderedHeaders(maxEvents);
 
   const csvRows: string[][] = [headers];
   rows.forEach(row => {
