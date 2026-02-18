@@ -94,14 +94,20 @@ const getOrderedHeaders = (maxEvents: number): string[] => {
   return headers;
 };
 
-export const exportToExcel = (data: ExtractedData, filename: string): void => {
+export const exportToExcel = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
   const maxEvents = getMaxEvents(data);
   const rows = buildExcelRows(data, maxEvents);
-  const headers = getOrderedHeaders(maxEvents);
+  const allHeaders = getOrderedHeaders(maxEvents);
+  const headers = selectedColumns ? allHeaders.filter(h => selectedColumns.includes(h)) : allHeaders;
 
-  const worksheet = XLSX.utils.json_to_sheet(rows, { header: headers });
+  // Filter rows to only include selected columns
+  const filteredRows = rows.map(row => {
+    const filtered: Record<string, string> = {};
+    headers.forEach(h => { filtered[h] = row[h] || ''; });
+    return filtered;
+  });
 
-  // Auto-size columns
+  const worksheet = XLSX.utils.json_to_sheet(filteredRows, { header: headers });
   worksheet['!cols'] = headers.map(h => ({ wch: Math.min(Math.max(h.length + 2, 12), 40) }));
 
   const workbook = XLSX.utils.book_new();
@@ -109,10 +115,11 @@ export const exportToExcel = (data: ExtractedData, filename: string): void => {
   XLSX.writeFile(workbook, `${filename}.xlsx`);
 };
 
-export const exportToCSV = (data: ExtractedData, filename: string): void => {
+export const exportToCSV = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
   const maxEvents = getMaxEvents(data);
   const rows = buildExcelRows(data, maxEvents);
-  const headers = getOrderedHeaders(maxEvents);
+  const allHeaders = getOrderedHeaders(maxEvents);
+  const headers = selectedColumns ? allHeaders.filter(h => selectedColumns.includes(h)) : allHeaders;
 
   const csvRows: string[][] = [headers];
   rows.forEach(row => {
