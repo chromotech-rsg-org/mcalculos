@@ -90,28 +90,34 @@ const extractEmployee = (lines: LayoutLine[]): {
     }
   }
   
-  const searchEnd = tableHeaderIdx > 0 ? tableHeaderIdx : Math.min(10, lines.length);
+  const searchEnd = tableHeaderIdx > 0 ? tableHeaderIdx : Math.min(12, lines.length);
   
-  for (let i = 2; i < searchEnd; i++) {
+  // Search ALL lines before the table header (starting from line 0, not 2)
+  // because different pages may have different header sizes
+  for (let i = 0; i < searchEnd; i++) {
     const line = lines[i];
     const items = line.items;
     const text = line.text;
     
-    // Strategy: use individual items to find employee data positionally
-    // Look for a 3-digit code item, then name items, then 6-digit CBO item
+    // Skip lines that are clearly header labels
+    if (/^(Empresa|CNPJ|Codigo\s+Centro|Folha\s)/i.test(text.trim())) continue;
+    
+    // Strategy 1: find a short numeric code (1-4 digits) followed by uppercase name and 6-digit CBO
     if (!result.codigo) {
-      const codeItem = items.find(it => /^\d{3}$/.test(it.str.trim()));
-      if (codeItem) {
-        result.codigo = codeItem.str.trim();
+      // Try to find any item that is a short numeric code (1-4 digits)
+      const codeItems = items.filter(it => /^\d{1,4}$/.test(it.str.trim()));
+      
+      for (const codeItem of codeItems) {
+        const code = codeItem.str.trim();
         
-        // Items after code sorted by X - collect name parts (uppercase text) 
-        // and numeric fields (CBO, dept, filial)
+        // Items after code sorted by X
         const afterCode = items
           .filter(it => it.x > codeItem.x)
           .sort((a, b) => a.x - b.x);
         
         const nameParts: string[] = [];
         const numericParts: string[] = [];
+        let foundCbo = false;
         
         for (const it of afterCode) {
           const val = it.str.trim();
@@ -119,34 +125,36 @@ const extractEmployee = (lines: LayoutLine[]): {
           
           if (/^\d+$/.test(val)) {
             numericParts.push(val);
-          } else if (/^[A-ZÀ-Ú\s.]+$/.test(val) && val.length >= 2) {
-            // Only add to name if we haven't started finding numbers yet
+            if (val.length === 6) foundCbo = true;
+          } else if (/^[A-ZÀ-Ú][A-ZÀ-Ú\s.]*$/.test(val) && val.length >= 2) {
             if (numericParts.length === 0) {
               nameParts.push(val);
             }
           }
         }
         
-        if (nameParts.length > 0) {
+        // Only accept this as an employee line if we found a name AND a 6-digit CBO
+        if (nameParts.length > 0 && foundCbo) {
+          result.codigo = code;
           result.nome = nameParts.join(' ').trim();
-        }
-        
-        // First 6-digit number is CBO, then dept, then filial
-        for (const num of numericParts) {
-          if (!result.cbo && num.length === 6) {
-            result.cbo = num;
-          } else if (result.cbo && !result.departamento) {
-            result.departamento = num;
-          } else if (result.cbo && result.departamento && !result.filial) {
-            result.filial = num;
+          
+          for (const num of numericParts) {
+            if (!result.cbo && num.length === 6) {
+              result.cbo = num;
+            } else if (result.cbo && !result.departamento) {
+              result.departamento = num;
+            } else if (result.cbo && result.departamento && !result.filial) {
+              result.filial = num;
+            }
           }
+          break;
         }
       }
     }
     
-    // Also try regex as fallback for the employee line
+    // Strategy 2: regex fallback on concatenated text
     if (!result.codigo) {
-      const empMatch = text.match(/\b(\d{3})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s]{3,}?)\s+(\d{6})\b/);
+      const empMatch = text.match(/\b(\d{1,4})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s.]{3,}?)\s+(\d{6})\b/);
       if (empMatch) {
         result.codigo = empMatch[1];
         result.nome = empMatch[2].trim();
