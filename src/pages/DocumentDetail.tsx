@@ -506,23 +506,48 @@ const DocumentDetail: React.FC = () => {
                           </Button>
                         </div>
 
-                        {/* Header info - Dynamic fields */}
+                        {/* Dynamic fields */}
                         {month.fields && month.fields.length > 0 && (
                           <div className="grid grid-cols-2 gap-2 text-sm">
-                            {month.fields
-                              .filter(f => {
-                                // Skip fields that are shown in the events table or totals section
-                                if (month.eventos?.some(e => e.descricao === f.key)) return false;
-                                return true;
-                              })
-                              .map((field, fieldIdx) => (
-                                <div key={`${field.key}-${fieldIdx}`}>
-                                  <p className="text-muted-foreground text-xs">{field.key}</p>
-                                  <div className="font-medium text-xs">
-                                    {renderEditableCell(field.value, monthIndex, `fields.${fieldIdx}.value`)}
-                                  </div>
+                            {month.fields.map((field, fieldIdx) => (
+                              <div key={`${field.key}-${fieldIdx}`}>
+                                <p className="text-muted-foreground text-xs">{field.key}</p>
+                                <div className="font-medium text-xs">
+                                  {renderEditableCell(field.value, monthIndex, `fields.${fieldIdx}.value`)}
                                 </div>
-                              ))}
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Events table */}
+                        {month.eventos && month.eventos.length > 0 && (
+                          <div className="mt-2">
+                            <p className="text-xs font-semibold text-muted-foreground mb-1">Eventos ({month.eventos.length})</p>
+                            <div className="rounded border overflow-auto max-h-48">
+                              <Table>
+                                <TableHeader>
+                                  <TableRow>
+                                    <TableHead className="text-xs py-1">Cód</TableHead>
+                                    <TableHead className="text-xs py-1">Descrição</TableHead>
+                                    <TableHead className="text-xs py-1">Ref</TableHead>
+                                    <TableHead className="text-xs py-1">Venc.</TableHead>
+                                    <TableHead className="text-xs py-1">Desc.</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {month.eventos.map((ev, evIdx) => (
+                                    <TableRow key={evIdx}>
+                                      <TableCell className="text-xs py-1">{renderEditableCell(ev.codigo, monthIndex, 'eventos', 'codigo', evIdx)}</TableCell>
+                                      <TableCell className="text-xs py-1">{renderEditableCell(ev.descricao, monthIndex, 'eventos', 'descricao', evIdx)}</TableCell>
+                                      <TableCell className="text-xs py-1">{renderEditableCell(ev.referencia, monthIndex, 'eventos', 'referencia', evIdx)}</TableCell>
+                                      <TableCell className="text-xs py-1">{renderEditableCell(ev.vencimento, monthIndex, 'eventos', 'vencimento', evIdx)}</TableCell>
+                                      <TableCell className="text-xs py-1">{renderEditableCell(ev.desconto, monthIndex, 'eventos', 'desconto', evIdx)}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
                           </div>
                         )}
                         {monthIndex < (doc.extractedData?.months.length || 0) - 1 && (
