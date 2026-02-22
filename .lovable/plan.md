@@ -1,91 +1,77 @@
 
+# Refactoring: Extraction 100% Dynamic with Unified Data Flow
 
-# Correcao da Extracao do Modelo 1a - Abordagem por Layout Visual
+## Problem
 
-## Diagnostico do Problema
+The extraction now captures fields dynamically in `month.fields[]`, but three critical components still use the old hardcoded `ExtractedMonth` properties (`empresa`, `cnpj`, `salarioBase`, etc.):
 
-O pdf.js extrai texto como uma lista flat de items com coordenadas (x, y), mas o codigo atual junta tudo com `.join(' ')`, perdendo completamente a informacao de posicao. O resultado e uma string unica onde as regex nao conseguem distinguir colunas (Vencimentos vs Descontos), identificar blocos (cabecalho vs tabela vs rodape), nem separar o cargo dos eventos.
+1. **Export (`export.ts`)** -- builds Excel/CSV rows from hardcoded property names, ignoring `fields[]`
+2. **DataTableView** -- defines columns from hardcoded properties, ignoring `fields[]`
+3. **`extractPattern1aPage`** -- duplicates data by writing the same values into both `fields[]` AND typed properties (`month.empresa`, `month.cnpj`, etc.)
 
-Evidencia na screenshot: so 1 evento foi extraido, e e o cargo ("OP. DE SERRA E ESTICADEIRA JR.") confundido com evento. Campos como Nome, CBO, Departamento, Filial ficaram vazios.
+This means dynamic fields extracted from varied layouts (Centro de Ensino, Keypar, A.L. IND COM) are visible in the detail view but lost when exporting or viewing in the table.
 
-## Solucao
+## Solution
 
-Reescrever a extracao para usar as coordenadas (x, y) dos text items do pdf.js, reconstruindo linhas e colunas pela posicao visual.
+Unify everything around `month.fields[]` as the single source of truth for all non-event data. Events remain in `month.eventos[]`.
 
-## Detalhes Tecnicos
+---
 
-### 1. Novo modulo de parsing posicional (`src/lib/extraction-patterns/pdf-layout.ts`)
+## Technical Changes
 
-Criar funcoes utilitarias para reconstruir o layout:
+### 1. Simplify `extractPattern1aPage` (pattern1a.ts)
 
-- **`extractTextItems(page)`**: Extrair items com `{str, x, y, width, height}` do pdf.js `getTextContent()` (campos `transform[4]` = x, `transform[5]` = y)
-- **`groupIntoLines(items)`**: Agrupar items por coordenada Y (tolerancia ~3px) e ordenar por X dentro de cada linha
-- **`reconstructLines(items)`**: Gerar array de linhas onde cada linha tem o texto completo e os items posicionais
+- Remove duplicate writes to typed properties. Only populate `fields[]` and `eventos[]`.
+- Keep `month.month` (period string) and `month.competencia` for display/sorting.
+- Keep `month.eventos`, `month.totalVencimentos`, `month.totalDescontos`, `month.valorLiquido` (these are summary fields derived from the events table).
+- Remove population of `month.empresa`, `month.cnpj`, `month.nomeFuncionario`, `month.cargo`, `month.dataAdmissao`, etc. -- these are now in `fields[]` only.
+- Improve `extractAllFields` to better handle the A.L. IND COM layout:
+  - Recognize "Agencia:" with colon and "ITAU 4446 341" as bank info
+  - Recognize "conta corrente:" as a labeled field
+  - Handle "Sal. Contr. INSS", "Base Calc. FGTS", "F.G.T.S do Mes", "Base Calc. IRRF", "Faixa IRRF" labels (with abbreviated/variant names)
+  - Skip "A TRANSPORTAR" continuation markers and "Declaro ter recebido" text
+  - Skip "PARABENS PELO SEU ANIVERSARIO" messages (add to structural filter)
+  - Filter out duplicate data (same field appearing in top and bottom halves of the page since the PDF has 2 copies per page)
 
-### 2. Reescrever `pattern1a.ts` com parsing posicional
+### 2. Update Export (`export.ts`)
 
-Substituir todas as regex por logica baseada em blocos:
+Replace the hardcoded `buildExcelRows` and `getOrderedHeaders` with dynamic logic:
 
-**Bloco 1 - Cabecalho (linhas 1-3 do PDF):**
-- Linha 1: Empresa (texto completo da primeira linha)
-- Linha 2: CNPJ (apos "CNPJ:"), CC (apos "CC:"), "Folha Mensal"
-- Linha 3: "Mensalista", Competencia (mes de ano)
+- **Collect all unique field keys** across all months from `fields[]`
+- **Order columns**: Period/Competencia first, then alphabetical or by first-appearance order for field keys, then event columns, then totals
+- **Build rows** by looking up `month.fields.find(f => f.key === columnKey)?.value`
+- Events columns remain as before (codigo, descricao, referencia, vencimento, desconto per event line)
+- This ensures every field from every layout variation appears in the export
 
-**Bloco 2 - Funcionario (linhas 4-5):**
-- Linha 4: Codigo (3 digitos), Nome (texto em maiusculas), CBO (6 digitos), Departamento, Filial
-- Linha 5: Cargo (texto antes de "Admissao:"), Data Admissao
+### 3. Update DataTableView (`DataTableView.tsx`)
 
-**Bloco 3 - Tabela de Eventos (linhas entre cabecalho de colunas e "Total de Vencimentos"):**
-- Detectar o cabecalho da tabela pela presenca de "Codigo", "Descricao", "Vencimentos", "Descontos"
-- Guardar as posicoes X das colunas Vencimentos e Descontos
-- Para cada linha seguinte ate os totais:
-  - Codigo: primeiro numero de 3-4 digitos
-  - Descricao: texto entre codigo e referencia
-  - Referencia: valor numerico na posicao X da coluna Referencia
-  - Vencimento/Desconto: determinar pelo X do valor -- se esta na zona da coluna "Vencimentos" e vencimento, senao e desconto
-- Isso resolve o problema principal: distinguir em qual coluna o valor esta
+- Replace hardcoded `getBaseColumns()` with dynamic column discovery from `data.months[*].fields[*].key`
+- Collect all unique field keys across all months
+- Each column's `getValue` looks up from `month.fields[]`
+- Event columns remain as before
+- Column visibility preferences still work (stored by key)
 
-**Bloco 4 - Totais:**
-- Procurar linhas com "Total de Vencimentos" e "Total de Descontos"
-- Valor Liquido: apos "Valor Liquido"
+### 4. Update DocumentDetail display (`DocumentDetail.tsx`)
 
-**Bloco 5 - Rodape financeiro (ultima linha com 6 valores numericos):**
-- Identificar a linha que contem "Salario Base", "Sal. Contr. INSS", etc.
-- A proxima linha tera os 6 valores na mesma ordem posicional
+- The detail view already renders `month.fields[]` dynamically -- minor cleanup only
+- Ensure the events table section still displays properly
+- Show `totalVencimentos`, `totalDescontos`, `valorLiquido` from `month` properties (they are summary values from event parsing)
 
-**Bloco 6 - Dados bancarios:**
-- Procurar "ITAU", "conta corrente:", "Agencia:" nas linhas do rodape
-- Extrair banco, agencia e conta corrente respeitando a ordem
+### 5. Improve extraction robustness (pattern1a.ts)
 
-### 3. Modificar `extractDataFromPDF` em `src/lib/extraction.ts`
+- **Duplicate page filtering**: Many PDFs have 2 copies of the same payslip on one page (employer + employee copy). Detect and skip the second copy by checking if the same "Total de Vencimentos" value appears twice on the same page.
+- **"A TRANSPORTAR" handling**: When a payslip spans 2 pages, the first page ends with "A TRANSPORTAR" and the second continues. Merge events from continuation pages into the previous month.
+- **Better footer field extraction**: Scan lines after the events table for footer fields like "Salario Base", "Base Calc. FGTS", etc. using the same generic label-value approach. The current `extractFooter` function is separate and not feeding into `fields[]` -- integrate it.
+- **Bank info integration**: Move bank info into `fields[]` instead of separate properties.
+- **Confidence tagging**: For now, skip "[baixa confianca]" tagging -- the positional extraction is reliable enough. Can be added later if OCR is integrated.
+- **observacoes_extras**: Capture birthday messages ("PARABENS...") and other non-standard text into a field called "Observacoes" in `fields[]`.
 
-- Em vez de `textContent.items.map(item => item.str).join(' ')`, passar os items brutos com coordenadas para o pattern extractor
-- Criar duas versoes do texto por pagina:
-  1. `rawItems`: array de `{str, x, y}` para parsing posicional
-  2. `flatText`: string concatenada para deteccao de pattern (detector.ts)
+### Files to modify
 
-### 4. Ajustar `extractPattern1a` e `extractPattern1aPage`
-
-- Receber `items: TextItem[]` em vez de `text: string`
-- Usar `groupIntoLines(items)` para reconstruir linhas
-- Detectar zonas de colunas pela posicao X dos cabecalhos da tabela
-- Cada evento recebe vencimento ou desconto com base na posicao X do valor
-
-### Arquivos modificados
-
-| Arquivo | Alteracao |
+| File | Change |
 |---|---|
-| `src/lib/extraction-patterns/pdf-layout.ts` | Novo - funcoes de layout posicional |
-| `src/lib/extraction-patterns/pattern1a.ts` | Reescrito - usa items posicionais |
-| `src/lib/extraction-patterns/index.ts` | Exportar novos tipos |
-| `src/lib/extraction.ts` | Passar items posicionais ao pattern extractor |
-
-### Resultado esperado
-
-Todos os 13 eventos do PDF serao extraidos corretamente com:
-- Descricoes exatas (DIAS NORMAIS, REFLEXO EXTRAS DSR, etc.)
-- Vencimento e Desconto na coluna correta
-- Cabecalho completo (Empresa, CNPJ, CC, Nome, CBO, Departamento, Filial, Cargo)
-- Rodape completo (Salario Base, bases de INSS/FGTS/IRRF, FGTS do Mes)
-- Dados bancarios (Itau, 4446, 36372-5)
-
+| `src/lib/extraction-patterns/pattern1a.ts` | Integrate footer/bank into `extractAllFields`, remove duplicate property writes, handle "A TRANSPORTAR" continuation, filter duplicate copies |
+| `src/lib/export.ts` | Dynamic columns from `fields[]`, dynamic headers |
+| `src/components/documents/DataTableView.tsx` | Dynamic columns from `fields[]` |
+| `src/pages/DocumentDetail.tsx` | Minor cleanup, show totals section properly |
+| `src/types/index.ts` | No changes needed -- `fields[]` already exists on `ExtractedMonth` |
