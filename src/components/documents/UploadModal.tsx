@@ -45,8 +45,12 @@ const UploadModal: React.FC<UploadModalProps> = ({
       setPayslipPattern('auto');
       setUploadMode('new');
       setSelectedDocId('');
+    } else if (files.length > 0 && !docName) {
+      // Auto-fill document name from filename (remove extension)
+      const firstName = files[0].name.replace(/\.[^/.]+$/, '');
+      setDocName(firstName);
     }
-  }, [open]);
+  }, [open, files]);
 
   const convertToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
@@ -182,7 +186,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-lg">
+      <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Upload de Documentos</DialogTitle>
           <DialogDescription>

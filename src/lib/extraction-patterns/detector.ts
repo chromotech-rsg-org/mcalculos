@@ -2,15 +2,24 @@
  * Auto-detect payslip pattern from extracted text
  */
 export const detectPayslipPattern = (text: string): string => {
-  // Pattern 1a: "Folha Mensal" + specific table structure
-  const has1a = (
-    /Folha\s+Mensal/i.test(text) &&
-    /Vencimentos/i.test(text) &&
-    /Descontos/i.test(text) &&
-    /Sal[aá]rio\s+Base/i.test(text)
+  // Pattern 1a: Brazilian payslip with table structure (Vencimentos/Descontos)
+  // Broadened detection to cover SEMAR, Keypar, and other variations
+  const hasTableStructure = /Vencimentos/i.test(text) && /Descontos/i.test(text);
+  const hasPayslipIndicators = (
+    /Folha\s+(Mensal|Complementar|Pagamento)/i.test(text) ||
+    /Sal[aá]rio\s+Base/i.test(text) ||
+    /Sal\.\s*Contr/i.test(text) ||
+    /Base\s+(INSS|FGTS)/i.test(text) ||
+    /Valor\s+L[ií]quido/i.test(text) ||
+    /Total\s+de\s+Vencimentos/i.test(text) ||
+    /Competência/i.test(text) ||
+    /Admiss[aã]o/i.test(text)
   );
   
-  if (has1a) return '1a';
+  if (hasTableStructure && hasPayslipIndicators) return '1a';
+  
+  // Even without "Folha Mensal", if we see table headers + CNPJ it's likely 1a
+  if (hasTableStructure && /CNPJ/i.test(text)) return '1a';
   
   // Future patterns: 2a, 3a, etc. will be added here
   

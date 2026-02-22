@@ -1,17 +1,14 @@
 import React, { useState, useCallback } from 'react';
-import { Plus, X, Loader2 } from 'lucide-react';
+import { Plus, Loader2 } from 'lucide-react';
 import LordIcon from '@/components/ui/lord-icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { useToast } from '@/hooks/use-toast';
-import { getDocuments, saveDocument, generateId, getStorageUsage } from '@/lib/storage';
-import { Document, DocumentFile } from '@/types';
+import { getDocuments } from '@/lib/storage';
+import { Document } from '@/types';
 import { useNavigate } from 'react-router-dom';
+import UploadModal from '@/components/documents/UploadModal';
 
 const Dashboard: React.FC = () => {
   const { currentUser } = useAuth();
@@ -19,11 +16,8 @@ const Dashboard: React.FC = () => {
   const navigate = useNavigate();
   
   const [isDragging, setIsDragging] = useState(false);
-  const [uploadedFiles, setUploadedFiles] = useState<File[]>([]);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  const [docName, setDocName] = useState('');
-  const [docDescription, setDocDescription] = useState('');
-  const [isUploading, setIsUploading] = useState(false);
+  const [uploadFiles, setUploadFiles] = useState<File[]>([]);
+  const [uploadModalOpen, setUploadModalOpen] = useState(false);
 
   const documents = currentUser ? getDocuments(currentUser.id) : [];
   const recentDocs = documents.slice(-5).reverse();
@@ -49,8 +43,8 @@ const Dashboard: React.FC = () => {
     );
     
     if (files.length > 0) {
-      setUploadedFiles(files);
-      setShowUploadModal(true);
+      setUploadFiles(files);
+      setUploadModalOpen(true);
     } else {
       toast({
         variant: 'destructive',
@@ -66,101 +60,13 @@ const Dashboard: React.FC = () => {
     );
     
     if (files.length > 0) {
-      setUploadedFiles(files);
-      setShowUploadModal(true);
+      setUploadFiles(files);
+      setUploadModalOpen(true);
     }
   };
 
-  const convertToBase64 = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.readAsDataURL(file);
-      reader.onload = () => resolve(reader.result as string);
-      reader.onerror = error => reject(error);
-    });
-  };
-
-  const handleUpload = async () => {
-    if (!docName.trim()) {
-      toast({
-        variant: 'destructive',
-        title: 'Nome obrigatório',
-        description: 'Digite um nome para o documento.',
-      });
-      return;
-    }
-
-    // Check for duplicates
-    const existingDoc = documents.find(d => d.name.toLowerCase() === docName.toLowerCase());
-    if (existingDoc) {
-      toast({
-        variant: 'destructive',
-        title: 'Nome duplicado',
-        description: 'Já existe um documento com este nome.',
-      });
-      return;
-    }
-
-    // Check storage
-    const storage = getStorageUsage();
-    if (storage.percentage > 90) {
-      toast({
-        variant: 'destructive',
-        title: 'Armazenamento cheio',
-        description: 'O armazenamento local está quase cheio. Exclua alguns documentos.',
-      });
-      return;
-    }
-
-    setIsUploading(true);
-
-    try {
-      const docFiles: DocumentFile[] = await Promise.all(
-        uploadedFiles.map(async (file) => ({
-          id: generateId(),
-          name: file.name,
-          type: file.type,
-          size: file.size,
-          base64: await convertToBase64(file),
-          uploadedAt: new Date().toISOString(),
-        }))
-      );
-
-      const newDoc: Document = {
-        id: generateId(),
-        userId: currentUser!.id,
-        name: docName,
-        description: docDescription,
-        files: docFiles,
-        extractedData: null,
-        status: 'pending',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      saveDocument(newDoc);
-
-      toast({
-        title: 'Upload concluído!',
-        description: `${uploadedFiles.length} arquivo(s) enviado(s) com sucesso.`,
-      });
-
-      setShowUploadModal(false);
-      setUploadedFiles([]);
-      setDocName('');
-      setDocDescription('');
-      
-      // Navigate to document page for extraction
-      navigate(`/documents/${newDoc.id}`);
-    } catch (error) {
-      toast({
-        variant: 'destructive',
-        title: 'Erro no upload',
-        description: 'Ocorreu um erro ao processar os arquivos.',
-      });
-    }
-
-    setIsUploading(false);
+  const handleUploadSuccess = (docId: string) => {
+    navigate(`/documents/${docId}`);
   };
 
   const getStatusIcon = (status: Document['status']) => {
@@ -343,90 +249,14 @@ const Dashboard: React.FC = () => {
       </Card>
 
       {/* Upload Modal */}
-      <Dialog open={showUploadModal} onOpenChange={setShowUploadModal}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Novo Documento</DialogTitle>
-            <DialogDescription>
-              Preencha as informações do documento
-            </DialogDescription>
-          </DialogHeader>
-
-          <div className="space-y-4">
-            {/* Selected files */}
-            <div className="space-y-2">
-              <Label>Arquivos selecionados</Label>
-              <div className="space-y-2 max-h-32 overflow-y-auto">
-                {uploadedFiles.map((file, index) => (
-                  <div
-                    key={index}
-                    className="flex items-center justify-between p-2 rounded-lg bg-muted"
-                  >
-                    <div className="flex items-center gap-2 truncate">
-                      <LordIcon icon="document" size={16} trigger="hover" colors={{ primary: '#08a88a', secondary: '#08a88a' }} />
-                      <span className="text-sm truncate">{file.name}</span>
-                    </div>
-                    <button
-                      onClick={() => setUploadedFiles(files => files.filter((_, i) => i !== index))}
-                      className="text-muted-foreground hover:text-destructive"
-                    >
-                      <X className="h-4 w-4" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="docName">Nome do Documento *</Label>
-              <Input
-                id="docName"
-                placeholder="Ex: Holerite Janeiro 2024"
-                value={docName}
-                onChange={(e) => setDocName(e.target.value)}
-              />
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="docDescription">Descrição</Label>
-              <Textarea
-                id="docDescription"
-                placeholder="Descrição opcional..."
-                value={docDescription}
-                onChange={(e) => setDocDescription(e.target.value)}
-                rows={3}
-              />
-            </div>
-          </div>
-
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setShowUploadModal(false)}
-              disabled={isUploading}
-            >
-              Cancelar
-            </Button>
-            <Button
-              onClick={handleUpload}
-              disabled={isUploading || uploadedFiles.length === 0}
-              className="gradient-primary text-primary-foreground"
-            >
-              {isUploading ? (
-                <>
-                  <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  Enviando...
-                </>
-              ) : (
-                <>
-                  <LordIcon icon="upload" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
-                  Enviar
-                </>
-              )}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <UploadModal
+        open={uploadModalOpen}
+        onOpenChange={setUploadModalOpen}
+        files={uploadFiles}
+        setFiles={setUploadFiles}
+        userId={currentUser?.id || ''}
+        onSuccess={handleUploadSuccess}
+      />
     </div>
   );
 };
