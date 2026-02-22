@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Check, EyeOff, Edit2, Save, BookTemplate, Trash2 } from 'lucide-react';
+import { Check, EyeOff, Edit2, Save, BookTemplate, Trash2, ArrowLeftRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -31,6 +31,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
   const [templates, setTemplates] = useState<ExtractionTemplate[]>(() => getTemplates());
   const [editingKey, setEditingKey] = useState<string | null>(null);
   const [editValue, setEditValue] = useState('');
+  const [swappingKey, setSwappingKey] = useState<string | null>(null);
 
   // Build unique field list with sample values from all months
   const initialFields = useMemo(() => {
@@ -51,6 +52,16 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
   }, [data]);
 
   const [fields, setFields] = useState<FieldState[]>(initialFields);
+
+  // All available key names for the swap selector
+  const allKeyOptions = useMemo(() => {
+    const keys = new Set<string>();
+    fields.forEach(f => {
+      keys.add(f.originalKey);
+      if (f.mappedKey !== f.originalKey) keys.add(f.mappedKey);
+    });
+    return Array.from(keys).sort();
+  }, [fields]);
 
   const validatedCount = fields.filter(f => f.status === 'validated').length;
   const ignoredCount = fields.filter(f => f.status === 'ignored').length;
@@ -76,6 +87,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
   const startRename = (originalKey: string, currentMapped: string) => {
     setEditingKey(originalKey);
     setEditValue(currentMapped);
+    setSwappingKey(null);
   };
 
   const saveRename = () => {
@@ -87,6 +99,28 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     ));
     setEditingKey(null);
     setEditValue('');
+  };
+
+  // Swap: reassign this field's title to another field's title (and vice versa)
+  const handleSwapKey = (originalKey: string, newMappedKey: string) => {
+    setFields(prev => {
+      // Find if another field currently has the newMappedKey as its mappedKey
+      const otherField = prev.find(f => f.originalKey !== originalKey && f.mappedKey === newMappedKey);
+      const currentField = prev.find(f => f.originalKey === originalKey);
+      
+      return prev.map(f => {
+        if (f.originalKey === originalKey) {
+          return { ...f, mappedKey: newMappedKey };
+        }
+        // If another field had that mappedKey, swap it to the current field's mappedKey
+        if (otherField && f.originalKey === otherField.originalKey && currentField) {
+          return { ...f, mappedKey: currentField.mappedKey };
+        }
+        return f;
+      });
+    });
+    setSwappingKey(null);
+    toast({ title: 'Título trocado!', description: `Campo agora mapeado para "${newMappedKey}"` });
   };
 
   const applyToData = (): ExtractedData => {
@@ -135,8 +169,6 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     setTemplates(getTemplates());
     setSaveDialogOpen(false);
     setTemplateName('');
-
-    // Also apply changes
     handleApplyChanges();
     toast({ title: 'Modelo salvo!', description: `"${template.name}" disponível para reutilização.` });
   };
@@ -167,7 +199,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
 
   return (
     <div className="space-y-4">
-      {/* Progress bar and actions */}
+      {/* Progress bar */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div className="flex-1 w-full">
           <div className="flex items-center justify-between text-sm mb-1">
@@ -196,20 +228,18 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
                 ))}
               </SelectContent>
             </Select>
-            {templates.length > 0 && (
-              <Select onValueChange={handleDeleteTemplate}>
-                <SelectTrigger className="w-10 h-9 px-2">
-                  <Trash2 className="h-3.5 w-3.5" />
-                </SelectTrigger>
-                <SelectContent>
-                  {templates.map(t => (
-                    <SelectItem key={t.id} value={t.id}>
-                      Excluir: {t.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            )}
+            <Select onValueChange={handleDeleteTemplate}>
+              <SelectTrigger className="w-10 h-9 px-2">
+                <Trash2 className="h-3.5 w-3.5" />
+              </SelectTrigger>
+              <SelectContent>
+                {templates.map(t => (
+                  <SelectItem key={t.id} value={t.id}>
+                    Excluir: {t.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
 
@@ -255,6 +285,35 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
                       <Save className="h-3 w-3" />
                     </Button>
                   </div>
+                ) : swappingKey === field.originalKey ? (
+                  <div className="flex-1">
+                    <Select
+                      value={field.mappedKey}
+                      onValueChange={(val) => {
+                        if (val === '__custom__') {
+                          startRename(field.originalKey, field.mappedKey);
+                        } else {
+                          handleSwapKey(field.originalKey, val);
+                        }
+                      }}
+                    >
+                      <SelectTrigger className="h-7 text-xs">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {allKeyOptions.map(key => (
+                          <SelectItem key={key} value={key}>
+                            <span className={key === field.mappedKey ? 'font-bold' : ''}>
+                              {key}
+                            </span>
+                          </SelectItem>
+                        ))}
+                        <SelectItem value="__custom__">
+                          <span className="italic text-muted-foreground">✏️ Digitar nome personalizado...</span>
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
                 ) : (
                   <div className="flex items-center gap-1 min-w-0">
                     <span className="font-medium text-sm truncate">{field.mappedKey}</span>
@@ -267,6 +326,15 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
                 )}
 
                 <div className="flex gap-0.5 flex-shrink-0">
+                  <Button
+                    size="icon"
+                    variant={swappingKey === field.originalKey ? 'secondary' : 'ghost'}
+                    className="h-6 w-6"
+                    onClick={() => setSwappingKey(swappingKey === field.originalKey ? null : field.originalKey)}
+                    title="Escolher título correto"
+                  >
+                    <ArrowLeftRight className="h-3 w-3" />
+                  </Button>
                   <Button
                     size="icon"
                     variant="ghost"
