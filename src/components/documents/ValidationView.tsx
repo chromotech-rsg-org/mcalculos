@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Check, EyeOff, Edit2, Save, BookTemplate, Trash2, ArrowLeftRight } from 'lucide-react';
+import React, { useState, useMemo, useCallback } from 'react';
+import { Check, EyeOff, Save, BookTemplate, Trash2, ArrowUpDown, Plus, X, GripVertical } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent } from '@/components/ui/card';
@@ -8,6 +8,7 @@ import { Progress } from '@/components/ui/progress';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { useToast } from '@/hooks/use-toast';
 import { ExtractedData, FieldMapping, ExtractionTemplate } from '@/types';
 import { getTemplates, saveTemplate, deleteTemplate, generateId } from '@/lib/storage';
@@ -18,10 +19,14 @@ interface ValidationViewProps {
 }
 
 interface FieldState {
+  id: string;
+  assignedKey: string;
+  assignedValue: string;
   originalKey: string;
-  mappedKey: string;
-  sampleValues: string[];
+  originalValue: string;
   status: 'pending' | 'validated' | 'ignored';
+  parentId?: string; // for grouping
+  children?: string[]; // IDs of child fields
 }
 
 const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
@@ -29,98 +34,115 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templates, setTemplates] = useState<ExtractionTemplate[]>(() => getTemplates());
-  const [editingKey, setEditingKey] = useState<string | null>(null);
-  const [editValue, setEditValue] = useState('');
-  const [swappingKey, setSwappingKey] = useState<string | null>(null);
+  const [groupMode, setGroupMode] = useState(false);
+  const [selectedForGroup, setSelectedForGroup] = useState<string[]>([]);
+  const [groupParentId, setGroupParentId] = useState<string | null>(null);
 
-  // Build unique field list with sample values from all months
+  // Build field list from all months
   const initialFields = useMemo(() => {
-    const map = new Map<string, string[]>();
+    const seen = new Map<string, FieldState>();
     data.months.forEach(month => {
       month.fields?.forEach(f => {
-        if (!map.has(f.key)) map.set(f.key, []);
-        const arr = map.get(f.key)!;
-        if (f.value && !arr.includes(f.value) && arr.length < 3) arr.push(f.value);
+        if (!seen.has(f.key)) {
+          seen.set(f.key, {
+            id: f.key,
+            assignedKey: f.key,
+            assignedValue: f.value,
+            originalKey: f.key,
+            originalValue: f.value,
+            status: 'pending',
+          });
+        }
       });
     });
-    return Array.from(map.entries()).map(([key, vals]): FieldState => ({
-      originalKey: key,
-      mappedKey: key,
-      sampleValues: vals,
-      status: 'pending',
-    }));
+    return Array.from(seen.values());
   }, [data]);
 
   const [fields, setFields] = useState<FieldState[]>(initialFields);
 
-  // All available key names for the swap selector
-  const allKeyOptions = useMemo(() => {
-    const keys = new Set<string>();
-    fields.forEach(f => {
-      keys.add(f.originalKey);
-      if (f.mappedKey !== f.originalKey) keys.add(f.mappedKey);
+  // Pool of all extracted strings (keys + values) for dropdowns
+  const allStrings = useMemo(() => {
+    const set = new Set<string>();
+    data.months.forEach(month => {
+      month.fields?.forEach(f => {
+        if (f.key?.trim()) set.add(f.key.trim());
+        if (f.value?.trim()) set.add(f.value.trim());
+      });
     });
-    return Array.from(keys).sort();
-  }, [fields]);
+    return Array.from(set).sort();
+  }, [data]);
+
+  // Top-level fields (not children of a group)
+  const topLevelFields = useMemo(() => fields.filter(f => !f.parentId), [fields]);
 
   const validatedCount = fields.filter(f => f.status === 'validated').length;
   const ignoredCount = fields.filter(f => f.status === 'ignored').length;
   const totalCount = fields.length;
   const progressPercent = totalCount > 0 ? Math.round(((validatedCount + ignoredCount) / totalCount) * 100) : 0;
 
-  const toggleValidated = (originalKey: string) => {
+  const updateField = useCallback((id: string, updates: Partial<FieldState>) => {
+    setFields(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
+  }, []);
+
+  const swapKeyValue = useCallback((id: string) => {
     setFields(prev => prev.map(f =>
-      f.originalKey === originalKey
-        ? { ...f, status: f.status === 'validated' ? 'pending' : 'validated' }
-        : f
+      f.id === id ? { ...f, assignedKey: f.assignedValue, assignedValue: f.assignedKey } : f
     ));
-  };
+    toast({ title: 'Título e valor trocados!' });
+  }, [toast]);
 
-  const toggleIgnored = (originalKey: string) => {
+  const toggleValidated = useCallback((id: string) => {
     setFields(prev => prev.map(f =>
-      f.originalKey === originalKey
-        ? { ...f, status: f.status === 'ignored' ? 'pending' : 'ignored' }
-        : f
+      f.id === id ? { ...f, status: f.status === 'validated' ? 'pending' : 'validated' } : f
     ));
-  };
+  }, []);
 
-  const startRename = (originalKey: string, currentMapped: string) => {
-    setEditingKey(originalKey);
-    setEditValue(currentMapped);
-    setSwappingKey(null);
-  };
-
-  const saveRename = () => {
-    if (!editingKey || !editValue.trim()) return;
+  const toggleIgnored = useCallback((id: string) => {
     setFields(prev => prev.map(f =>
-      f.originalKey === editingKey
-        ? { ...f, mappedKey: editValue.trim() }
-        : f
+      f.id === id ? { ...f, status: f.status === 'ignored' ? 'pending' : 'ignored' } : f
     ));
-    setEditingKey(null);
-    setEditValue('');
+  }, []);
+
+  // Grouping: create parent from selected fields
+  const createGroup = () => {
+    if (selectedForGroup.length < 2) {
+      toast({ title: 'Selecione ao menos 2 campos para agrupar.' });
+      return;
+    }
+
+    const parentId = selectedForGroup[0];
+    const childIds = selectedForGroup.slice(1);
+
+    setFields(prev => prev.map(f => {
+      if (f.id === parentId) {
+        return { ...f, children: [...(f.children || []), ...childIds] };
+      }
+      if (childIds.includes(f.id)) {
+        return { ...f, parentId };
+      }
+      return f;
+    }));
+
+    toast({ title: 'Grupo criado!', description: `${childIds.length} campo(s) agrupados sob "${fields.find(f => f.id === parentId)?.assignedKey}".` });
+    setSelectedForGroup([]);
+    setGroupMode(false);
   };
 
-  // Swap: reassign this field's title to another field's title (and vice versa)
-  const handleSwapKey = (originalKey: string, newMappedKey: string) => {
+  // Ungroup: remove a child from its parent
+  const ungroupField = (childId: string) => {
     setFields(prev => {
-      // Find if another field currently has the newMappedKey as its mappedKey
-      const otherField = prev.find(f => f.originalKey !== originalKey && f.mappedKey === newMappedKey);
-      const currentField = prev.find(f => f.originalKey === originalKey);
-      
+      const child = prev.find(f => f.id === childId);
+      if (!child?.parentId) return prev;
       return prev.map(f => {
-        if (f.originalKey === originalKey) {
-          return { ...f, mappedKey: newMappedKey };
+        if (f.id === child.parentId) {
+          return { ...f, children: (f.children || []).filter(c => c !== childId) };
         }
-        // If another field had that mappedKey, swap it to the current field's mappedKey
-        if (otherField && f.originalKey === otherField.originalKey && currentField) {
-          return { ...f, mappedKey: currentField.mappedKey };
+        if (f.id === childId) {
+          return { ...f, parentId: undefined };
         }
         return f;
       });
     });
-    setSwappingKey(null);
-    toast({ title: 'Título trocado!', description: `Campo agora mapeado para "${newMappedKey}"` });
   };
 
   const applyToData = (): ExtractedData => {
@@ -132,8 +154,8 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
         })
         .map(f => {
           const state = fields.find(s => s.originalKey === f.key);
-          if (state && state.mappedKey !== state.originalKey) {
-            return { ...f, key: state.mappedKey };
+          if (state) {
+            return { key: state.assignedKey, value: state.assignedValue };
           }
           return f;
         }) || [];
@@ -152,7 +174,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     if (!templateName.trim()) return;
     const mappings: FieldMapping[] = fields.map(f => ({
       originalKey: f.originalKey,
-      mappedKey: f.mappedKey,
+      mappedKey: f.assignedKey,
       ignore: f.status === 'ignored',
       validated: f.status === 'validated',
     }));
@@ -182,7 +204,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
       if (mapping) {
         return {
           ...f,
-          mappedKey: mapping.mappedKey,
+          assignedKey: mapping.mappedKey,
           status: mapping.ignore ? 'ignored' : mapping.validated ? 'validated' : 'pending',
         };
       }
@@ -197,22 +219,192 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     toast({ title: 'Modelo excluído' });
   };
 
+  const renderFieldCard = (field: FieldState, isChild = false) => {
+    const children = fields.filter(f => f.parentId === field.id);
+
+    return (
+      <Card
+        key={field.id}
+        className={`transition-all ${
+          field.status === 'validated' ? 'border-primary/50 bg-primary/5' :
+          field.status === 'ignored' ? 'border-muted bg-muted/30 opacity-60' :
+          'border-border'
+        } ${isChild ? 'ml-4 border-l-2 border-l-primary/30' : ''}`}
+      >
+        <CardContent className="p-3 space-y-2">
+          {/* Group checkbox */}
+          {groupMode && !field.parentId && (
+            <div className="flex items-center gap-2">
+              <Checkbox
+                checked={selectedForGroup.includes(field.id)}
+                onCheckedChange={(checked) => {
+                  setSelectedForGroup(prev =>
+                    checked ? [...prev, field.id] : prev.filter(id => id !== field.id)
+                  );
+                }}
+              />
+              <span className="text-xs text-muted-foreground">
+                {selectedForGroup.indexOf(field.id) === 0 ? '(campo pai)' :
+                 selectedForGroup.includes(field.id) ? '(será agrupado)' : 'Selecionar'}
+              </span>
+            </div>
+          )}
+
+          {/* Title (Key) selector */}
+          <div className="space-y-1">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Título</Label>
+            <Select
+              value={field.assignedKey}
+              onValueChange={(val) => {
+                if (val === '__custom__') {
+                  const custom = prompt('Digite o título personalizado:', field.assignedKey);
+                  if (custom?.trim()) updateField(field.id, { assignedKey: custom.trim() });
+                } else {
+                  updateField(field.id, { assignedKey: val });
+                }
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs font-medium">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                {allStrings.map((s, i) => (
+                  <SelectItem key={`key-${i}-${s}`} value={s}>
+                    <span className={s === field.assignedKey ? 'font-bold' : ''}>
+                      {s.length > 50 ? s.substring(0, 50) + '…' : s}
+                    </span>
+                  </SelectItem>
+                ))}
+                <SelectItem value="__custom__">
+                  <span className="italic text-muted-foreground">✏️ Digitar personalizado...</span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Swap button */}
+          <div className="flex justify-center">
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-6 text-xs gap-1 text-muted-foreground hover:text-foreground"
+              onClick={() => swapKeyValue(field.id)}
+              title="Trocar título ↔ valor"
+            >
+              <ArrowUpDown className="h-3 w-3" />
+              trocar ↔
+            </Button>
+          </div>
+
+          {/* Value selector */}
+          <div className="space-y-1">
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Valor</Label>
+            <Select
+              value={field.assignedValue}
+              onValueChange={(val) => {
+                if (val === '__custom__') {
+                  const custom = prompt('Digite o valor personalizado:', field.assignedValue);
+                  if (custom?.trim()) updateField(field.id, { assignedValue: custom.trim() });
+                } else {
+                  updateField(field.id, { assignedValue: val });
+                }
+              }}
+            >
+              <SelectTrigger className="h-8 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent className="max-h-60">
+                {allStrings.map((s, i) => (
+                  <SelectItem key={`val-${i}-${s}`} value={s}>
+                    <span className={s === field.assignedValue ? 'font-bold' : ''}>
+                      {s.length > 50 ? s.substring(0, 50) + '…' : s}
+                    </span>
+                  </SelectItem>
+                ))}
+                <SelectItem value="__custom__">
+                  <span className="italic text-muted-foreground">✏️ Digitar personalizado...</span>
+                </SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+
+          {/* Changes indicator */}
+          <div className="flex flex-wrap gap-1">
+            {field.assignedKey !== field.originalKey && (
+              <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                título: era "{field.originalKey.substring(0, 20)}"
+              </Badge>
+            )}
+            {field.assignedValue !== field.originalValue && (
+              <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                valor alterado
+              </Badge>
+            )}
+          </div>
+
+          {/* Action buttons */}
+          <div className="flex items-center justify-between pt-1 border-t border-border/50">
+            <div className="flex gap-1">
+              <Button
+                size="sm"
+                variant={field.status === 'validated' ? 'default' : 'ghost'}
+                className={`h-7 text-xs gap-1 ${field.status === 'validated' ? 'bg-primary text-primary-foreground' : ''}`}
+                onClick={() => toggleValidated(field.id)}
+              >
+                <Check className="h-3 w-3" />
+                OK
+              </Button>
+              <Button
+                size="sm"
+                variant={field.status === 'ignored' ? 'destructive' : 'ghost'}
+                className="h-7 text-xs gap-1"
+                onClick={() => toggleIgnored(field.id)}
+              >
+                <EyeOff className="h-3 w-3" />
+                Ignorar
+              </Button>
+            </div>
+            {isChild && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-7 text-xs gap-1"
+                onClick={() => ungroupField(field.id)}
+              >
+                <X className="h-3 w-3" />
+                Desagrupar
+              </Button>
+            )}
+          </div>
+
+          {/* Render children if this is a parent */}
+          {children.length > 0 && (
+            <div className="space-y-2 pt-2 border-t border-primary/20">
+              <span className="text-[10px] uppercase tracking-wider text-primary font-medium">
+                Campos agrupados ({children.length})
+              </span>
+              {children.map(child => renderFieldCard(child, true))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+    );
+  };
+
   return (
     <div className="space-y-4">
       {/* Progress bar */}
-      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
-        <div className="flex-1 w-full">
-          <div className="flex items-center justify-between text-sm mb-1">
-            <span className="text-muted-foreground">
-              {validatedCount} validados, {ignoredCount} ignorados de {totalCount} campos
-            </span>
-            <span className="font-medium">{progressPercent}%</span>
-          </div>
-          <Progress value={progressPercent} className="h-2" />
+      <div className="flex-1 w-full">
+        <div className="flex items-center justify-between text-sm mb-1">
+          <span className="text-muted-foreground">
+            {validatedCount} validados, {ignoredCount} ignorados de {totalCount} campos
+          </span>
+          <span className="font-medium">{progressPercent}%</span>
         </div>
+        <Progress value={progressPercent} className="h-2" />
       </div>
 
-      {/* Template selector + save */}
+      {/* Toolbar */}
       <div className="flex flex-wrap gap-2 items-center">
         {templates.length > 0 && (
           <div className="flex items-center gap-2">
@@ -244,141 +436,45 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
         )}
 
         <div className="flex gap-2 ml-auto">
-          <Button variant="outline" size="sm" onClick={() => setSaveDialogOpen(true)}>
-            <BookTemplate className="h-4 w-4 mr-1" />
-            Salvar como Modelo
-          </Button>
-          <Button size="sm" onClick={handleApplyChanges}>
-            <Check className="h-4 w-4 mr-1" />
-            Aplicar Alterações
-          </Button>
+          {groupMode ? (
+            <>
+              <Button variant="outline" size="sm" onClick={() => { setGroupMode(false); setSelectedForGroup([]); }}>
+                <X className="h-4 w-4 mr-1" />
+                Cancelar
+              </Button>
+              <Button size="sm" onClick={createGroup} disabled={selectedForGroup.length < 2}>
+                <Plus className="h-4 w-4 mr-1" />
+                Criar Grupo ({selectedForGroup.length})
+              </Button>
+            </>
+          ) : (
+            <>
+              <Button variant="outline" size="sm" onClick={() => setGroupMode(true)}>
+                <GripVertical className="h-4 w-4 mr-1" />
+                Agrupar Campos
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => setSaveDialogOpen(true)}>
+                <BookTemplate className="h-4 w-4 mr-1" />
+                Salvar como Modelo
+              </Button>
+              <Button size="sm" onClick={handleApplyChanges}>
+                <Check className="h-4 w-4 mr-1" />
+                Aplicar Alterações
+              </Button>
+            </>
+          )}
         </div>
       </div>
 
+      {groupMode && (
+        <div className="bg-accent/50 border border-accent rounded-md p-3 text-sm text-accent-foreground">
+          Selecione os campos para agrupar. O primeiro selecionado será o <strong>campo pai</strong>.
+        </div>
+      )}
+
       {/* Field cards */}
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-        {fields.map(field => (
-          <Card
-            key={field.originalKey}
-            className={`transition-all ${
-              field.status === 'validated' ? 'border-primary/50 bg-primary/5' :
-              field.status === 'ignored' ? 'border-muted bg-muted/30 opacity-60' :
-              'border-border'
-            }`}
-          >
-            <CardContent className="p-3 space-y-2">
-              {/* Title row */}
-              <div className="flex items-start justify-between gap-1">
-                {editingKey === field.originalKey ? (
-                  <div className="flex items-center gap-1 flex-1">
-                    <Input
-                      value={editValue}
-                      onChange={e => setEditValue(e.target.value)}
-                      className="h-7 text-xs"
-                      autoFocus
-                      onKeyDown={e => {
-                        if (e.key === 'Enter') saveRename();
-                        if (e.key === 'Escape') setEditingKey(null);
-                      }}
-                    />
-                    <Button size="icon" variant="ghost" className="h-6 w-6 flex-shrink-0" onClick={saveRename}>
-                      <Save className="h-3 w-3" />
-                    </Button>
-                  </div>
-                ) : swappingKey === field.originalKey ? (
-                  <div className="flex-1">
-                    <Select
-                      value={field.mappedKey}
-                      onValueChange={(val) => {
-                        if (val === '__custom__') {
-                          startRename(field.originalKey, field.mappedKey);
-                        } else {
-                          handleSwapKey(field.originalKey, val);
-                        }
-                      }}
-                    >
-                      <SelectTrigger className="h-7 text-xs">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {allKeyOptions.map(key => (
-                          <SelectItem key={key} value={key}>
-                            <span className={key === field.mappedKey ? 'font-bold' : ''}>
-                              {key}
-                            </span>
-                          </SelectItem>
-                        ))}
-                        <SelectItem value="__custom__">
-                          <span className="italic text-muted-foreground">✏️ Digitar nome personalizado...</span>
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-1 min-w-0">
-                    <span className="font-medium text-sm truncate">{field.mappedKey}</span>
-                    {field.mappedKey !== field.originalKey && (
-                      <Badge variant="secondary" className="text-[10px] px-1 py-0 flex-shrink-0">
-                        era: {field.originalKey}
-                      </Badge>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex gap-0.5 flex-shrink-0">
-                  <Button
-                    size="icon"
-                    variant={swappingKey === field.originalKey ? 'secondary' : 'ghost'}
-                    className="h-6 w-6"
-                    onClick={() => setSwappingKey(swappingKey === field.originalKey ? null : field.originalKey)}
-                    title="Escolher título correto"
-                  >
-                    <ArrowLeftRight className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6"
-                    onClick={() => startRename(field.originalKey, field.mappedKey)}
-                    title="Renomear campo"
-                  >
-                    <Edit2 className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant={field.status === 'validated' ? 'default' : 'ghost'}
-                    className={`h-6 w-6 ${field.status === 'validated' ? 'bg-primary text-primary-foreground' : ''}`}
-                    onClick={() => toggleValidated(field.originalKey)}
-                    title="Validar campo"
-                  >
-                    <Check className="h-3 w-3" />
-                  </Button>
-                  <Button
-                    size="icon"
-                    variant={field.status === 'ignored' ? 'destructive' : 'ghost'}
-                    className="h-6 w-6"
-                    onClick={() => toggleIgnored(field.originalKey)}
-                    title="Ignorar campo"
-                  >
-                    <EyeOff className="h-3 w-3" />
-                  </Button>
-                </div>
-              </div>
-
-              {/* Sample values */}
-              <div className="space-y-0.5">
-                {field.sampleValues.map((val, i) => (
-                  <p key={i} className={`text-xs ${field.status === 'ignored' ? 'line-through text-muted-foreground' : 'text-foreground'}`}>
-                    {val}
-                  </p>
-                ))}
-                {field.sampleValues.length === 0 && (
-                  <p className="text-xs text-muted-foreground italic">Sem valor</p>
-                )}
-              </div>
-            </CardContent>
-          </Card>
-        ))}
+        {topLevelFields.map(field => renderFieldCard(field))}
       </div>
 
       {/* Save Template Dialog */}
@@ -387,7 +483,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
           <DialogHeader>
             <DialogTitle>Salvar como Modelo</DialogTitle>
             <DialogDescription>
-              Dê um nome para este modelo. Ele será usado para aplicar as mesmas regras em documentos futuros com layout similar.
+              Dê um nome para este modelo. Ele será usado para aplicar as mesmas regras em documentos futuros.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-2">
