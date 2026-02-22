@@ -1111,24 +1111,82 @@ export const extractPattern1aPage = (items: TextItem[]): {
 } => {
   const lines = groupIntoLines(items);
 
+  // Extract header/employee/footer/bank using existing block extractors
+  const header = extractHeader(lines);
+  const employee = extractEmployee(lines);
+  const footer = extractFooter(lines);
+  const bank = extractBankInfo(lines);
+
   // Extract events (structured table)
   const { eventos, totalVencimentos, totalDescontos, valorLiquido, period: eventPeriod, headerIdx, endIdx } = extractEvents(lines);
 
   // Extract ALL label-value pairs dynamically (truly generic)
   const dynamicFields = extractAllFields(lines, headerIdx, endIdx);
 
-  // Add totals as fields if not already captured
+  // Build unified fields[] from all sources, deduplicating
   const fields: ExtractedField[] = [...dynamicFields];
-  const existingKeys = new Set(fields.map(f => f.key.toLowerCase()));
+  const existingKeys = new Set(fields.map(f => `${f.key.toLowerCase()}::${f.value}`));
   const addIfNew = (key: string, value: string) => {
     if (!value) return;
-    if (existingKeys.has(key.toLowerCase())) return;
+    const uid = `${key.toLowerCase()}::${value}`;
+    if (existingKeys.has(uid)) return;
+    // Also skip if same key already exists (first wins)
+    if (fields.some(f => f.key.toLowerCase() === key.toLowerCase())) return;
     fields.push({ key, value });
-    existingKeys.add(key.toLowerCase());
+    existingKeys.add(uid);
   };
-  addIfNew('Total de Proventos', totalVencimentos);
-  addIfNew('Total de Descontos', totalDescontos);
+
+  // Add header fields
+  addIfNew('Empresa', header.empresa);
+  addIfNew('CNPJ', header.cnpj);
+  addIfNew('Centro de Custo', header.centroCusto);
+  addIfNew('Tipo de Folha', header.tipoFolha);
+  addIfNew('Competência', header.competencia);
+  addIfNew('Folha Nº', header.folhaNumero);
+
+  // Add employee fields
+  addIfNew('Código Funcionário', employee.codigo);
+  addIfNew('Nome Funcionário', employee.nome);
+  addIfNew('CBO', employee.cbo);
+  addIfNew('Departamento', employee.departamento);
+  addIfNew('Filial', employee.filial);
+  addIfNew('Cargo', employee.cargo);
+  addIfNew('Data de Admissão', employee.dataAdmissao);
+  addIfNew('Endereço', employee.endereco);
+  addIfNew('Bairro', employee.bairro);
+  addIfNew('Cidade', employee.cidade);
+  addIfNew('CEP', employee.cep);
+  addIfNew('UF', employee.uf);
+  addIfNew('PIS', employee.pis);
+  addIfNew('CPF', employee.cpf);
+  addIfNew('Identidade', employee.identidade);
+  addIfNew('Data Crédito', employee.dataCredito);
+  addIfNew('Dep. Sal. Fam.', employee.depSalFam);
+
+  // Add footer fields
+  addIfNew('Salário Base', footer.salarioBase);
+  addIfNew('Base INSS', footer.baseInss);
+  addIfNew('Base FGTS', footer.baseFgts);
+  addIfNew('FGTS do Mês', footer.fgtsMes);
+  addIfNew('Base IRRF', footer.baseIrrf);
+  addIfNew('IRRF', footer.irrf);
+
+  // Add bank fields
+  addIfNew('Banco', bank.banco);
+  addIfNew('Agência', bank.agencia);
+  addIfNew('Conta Corrente', bank.contaCorrente);
+
+  // Add totals
+  addIfNew('Total Vencimentos', totalVencimentos);
+  addIfNew('Total Descontos', totalDescontos);
   addIfNew('Valor Líquido', valorLiquido);
+
+  // Capture birthday/observation messages
+  for (const line of lines) {
+    if (/PARAB[EÉ]NS/i.test(line.text)) {
+      addIfNew('Observações', line.text.replace(/^\*+\s*|\s*\*+$/g, '').trim());
+    }
+  }
 
   // Helper to find a field by regex
   const findField = (regex: RegExp): string => {
@@ -1139,20 +1197,14 @@ export const extractPattern1aPage = (items: TextItem[]): {
   const empresa = findField(/Empresa/i);
   const cnpj = findField(/CNPJ/i);
   const nome = findField(/Nome/i);
-  const competencia = findField(/Compet[eê]ncia/i) || findField(/Folha/i);
-  const period = eventPeriod || competencia;
+  const competencia = findField(/Compet[eê]ncia/i) || header.competencia;
+  const period = eventPeriod || header.period || competencia;
 
   return {
     month: {
       month: period,
       fields,
-      empresa,
-      cnpj,
       competencia: competencia || period,
-      nomeFuncionario: nome,
-      codigoFuncionario: findField(/Matr[ií]cula|C[oó]digo|Registro/i),
-      cargo: findField(/Fun[cç][aã]o|Cargo/i),
-      dataAdmissao: findField(/Admiss[aã]o/i),
       eventos,
       totalVencimentos,
       totalDescontos,
@@ -1175,7 +1227,15 @@ export const extractPattern1a = (pagesItems: TextItem[][]): Pattern1aResult => {
     if (result.cnpj && !cnpj) cnpj = result.cnpj;
 
     if (result.month.fields.length > 0 || (result.month.eventos && result.month.eventos.length > 0)) {
-      months.push(result.month);
+      // Duplicate page filtering: skip if same period + same totalVencimentos already exists
+      const isDuplicate = months.some(m =>
+        m.month === result.month.month &&
+        m.totalVencimentos === result.month.totalVencimentos &&
+        m.totalVencimentos !== ''
+      );
+      if (!isDuplicate) {
+        months.push(result.month);
+      }
     }
   }
 

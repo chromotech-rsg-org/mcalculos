@@ -17,33 +17,32 @@ interface ColumnDef {
   getValue: (month: any) => string;
 }
 
-const getBaseColumns = (): ColumnDef[] => [
-  { key: 'competencia', label: 'Competência', getValue: m => m.competencia || m.month || '' },
-  { key: 'empresa', label: 'Empresa', getValue: m => m.empresa || '' },
-  { key: 'cnpj', label: 'CNPJ', getValue: m => m.cnpj || '' },
-  { key: 'centroCusto', label: 'Centro de Custo', getValue: m => m.centroCusto || '' },
-  { key: 'tipoFolha', label: 'Tipo de Folha', getValue: m => m.tipoFolha || '' },
-  { key: 'folhaNumero', label: 'Folha Nº', getValue: m => m.folhaNumero || '' },
-  { key: 'codigoFuncionario', label: 'Cód. Funcionário', getValue: m => m.codigoFuncionario || '' },
-  { key: 'nomeFuncionario', label: 'Nome Funcionário', getValue: m => m.nomeFuncionario || '' },
-  { key: 'cbo', label: 'CBO', getValue: m => m.cbo || '' },
-  { key: 'departamento', label: 'Departamento', getValue: m => m.departamento || '' },
-  { key: 'filial', label: 'Filial', getValue: m => m.filial || '' },
-  { key: 'cargo', label: 'Cargo', getValue: m => m.cargo || '' },
-  { key: 'dataAdmissao', label: 'Data Admissão', getValue: m => m.dataAdmissao || '' },
-  { key: 'salarioBase', label: 'Salário Base', getValue: m => m.salarioBase || '' },
-  { key: 'totalVencimentos', label: 'Total Vencimentos', getValue: m => m.totalVencimentos || '' },
-  { key: 'totalDescontos', label: 'Total Descontos', getValue: m => m.totalDescontos || '' },
-  { key: 'valorLiquido', label: 'Valor Líquido', getValue: m => m.valorLiquido || '' },
-  { key: 'baseInss', label: 'Base INSS', getValue: m => m.baseInss || '' },
-  { key: 'baseFgts', label: 'Base FGTS', getValue: m => m.baseFgts || '' },
-  { key: 'fgtsMes', label: 'FGTS do Mês', getValue: m => m.fgtsMes || '' },
-  { key: 'baseIrrf', label: 'Base IRRF', getValue: m => m.baseIrrf || '' },
-  { key: 'irrf', label: 'IRRF', getValue: m => m.irrf || '' },
-  { key: 'banco', label: 'Banco', getValue: m => m.banco || '' },
-  { key: 'agencia', label: 'Agência', getValue: m => m.agencia || '' },
-  { key: 'contaCorrente', label: 'Conta Corrente', getValue: m => m.contaCorrente || '' },
-];
+/** Collect all unique field keys across all months, preserving first-appearance order */
+const collectFieldKeys = (data: ExtractedData): string[] => {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  for (const month of data.months) {
+    for (const field of (month.fields || [])) {
+      if (!seen.has(field.key)) {
+        seen.add(field.key);
+        keys.push(field.key);
+      }
+    }
+  }
+  return keys;
+};
+
+/** Build dynamic base columns from fields[] */
+const getDynamicBaseColumns = (fieldKeys: string[]): ColumnDef[] => {
+  return fieldKeys.map(key => ({
+    key: `field_${key}`,
+    label: key,
+    getValue: (m: any) => {
+      const field = (m.fields || []).find((f: any) => f.key === key);
+      return field?.value || '';
+    },
+  }));
+};
 
 const getEventColumns = (maxEvents: number): ColumnDef[] => {
   const cols: ColumnDef[] = [];
@@ -78,7 +77,9 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
     return max;
   }, [data]);
 
-  const allColumns = useMemo(() => [...getBaseColumns(), ...getEventColumns(maxEvents)], [maxEvents]);
+  const fieldKeys = useMemo(() => collectFieldKeys(data), [data]);
+  const baseColumns = useMemo(() => getDynamicBaseColumns(fieldKeys), [fieldKeys]);
+  const allColumns = useMemo(() => [...baseColumns, ...getEventColumns(maxEvents)], [baseColumns, maxEvents]);
 
   // Load saved preferences
   useEffect(() => {
@@ -86,7 +87,6 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        // Filter to only keys that exist in current column set
         const validKeys = allColumns.map(c => c.key);
         const filtered = parsed.filter((k: string) => validKeys.includes(k));
         if (filtered.length > 0) {
@@ -96,8 +96,8 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
       } catch {}
     }
     // Default: show base columns only
-    setVisibleColumnKeys(getBaseColumns().map(c => c.key));
-  }, [allColumns]);
+    setVisibleColumnKeys(baseColumns.map(c => c.key));
+  }, [allColumns, baseColumns]);
 
   const savePreferences = (keys: string[]) => {
     setVisibleColumnKeys(keys);

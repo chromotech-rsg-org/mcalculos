@@ -10,31 +10,48 @@ const getMaxEvents = (data: ExtractedData): number => {
     const count = (month.eventos || []).length;
     if (count > max) max = count;
   }
-  return Math.max(max, 1); // at least 1
+  return Math.max(max, 1);
 };
 
 /**
- * Build a single row per month matching the exact Excel format
+ * Collect all unique field keys across all months, preserving first-appearance order.
  */
-const buildExcelRows = (data: ExtractedData, maxEvents: number): Record<string, string>[] => {
+const collectFieldKeys = (data: ExtractedData): string[] => {
+  const keys: string[] = [];
+  const seen = new Set<string>();
+  for (const month of data.months) {
+    for (const field of (month.fields || [])) {
+      const k = field.key;
+      if (!seen.has(k)) {
+        seen.add(k);
+        keys.push(k);
+      }
+    }
+  }
+  return keys;
+};
+
+/**
+ * Get a field value from month.fields[] by key
+ */
+const getFieldValue = (month: any, key: string): string => {
+  const field = (month.fields || []).find((f: any) => f.key === key);
+  return field?.value || '';
+};
+
+/**
+ * Build a single row per month using dynamic fields from fields[]
+ */
+const buildExcelRows = (data: ExtractedData, fieldKeys: string[], maxEvents: number): Record<string, string>[] => {
   return data.months.map(month => {
     const row: Record<string, string> = {};
 
-    // Header fields
-    row['Empresa'] = month.empresa || '';
-    row['CNPJ'] = month.cnpj || data.cnpj || '';
-    row['Centro de Custo'] = month.centroCusto || '';
-    row['Tipo de Folha'] = month.tipoFolha || '';
-    row['Competência'] = month.competencia || month.month || '';
-    row['Folha Nº'] = month.folhaNumero || '';
-    row['Código Funcionário'] = month.codigoFuncionario || '';
-    row['Nome Funcionário'] = month.nomeFuncionario || data.employeeName || '';
-    row['CBO'] = month.cbo || '';
-    row['Departamento'] = month.departamento || '';
-    row['Filial'] = month.filial || '';
-    row['Cargo'] = month.cargo || '';
+    // Dynamic fields from fields[]
+    for (const key of fieldKeys) {
+      row[key] = getFieldValue(month, key);
+    }
 
-    // Event lines - only up to maxEvents
+    // Event lines
     const eventos = month.eventos || [];
     for (let i = 0; i < maxEvents; i++) {
       const n = i + 1;
@@ -46,34 +63,15 @@ const buildExcelRows = (data: ExtractedData, maxEvents: number): Record<string, 
       row[`Valor Desconto linha ${n}`] = ev?.desconto || '';
     }
 
-    // Footer fields
-    row['Data de Admissão'] = month.dataAdmissao || '';
-    row['Salário Base'] = month.salarioBase || '';
-    row['Total Vencimentos'] = month.totalVencimentos || '';
-    row['Total Descontos'] = month.totalDescontos || '';
-    row['Valor Líquido'] = month.valorLiquido || '';
-    row['Base INSS'] = month.baseInss || '';
-    row['Base FGTS'] = month.baseFgts || '';
-    row['FGTS do Mês'] = month.fgtsMes || '';
-    row['Base IRRF'] = month.baseIrrf || '';
-    row['IRRF'] = month.irrf || '';
-    row['Banco'] = month.banco || '';
-    row['Agência'] = month.agencia || '';
-    row['Conta Corrente'] = month.contaCorrente || '';
-
     return row;
   });
 };
 
 /**
- * Build headers in the exact order, with dynamic event count
+ * Build headers: dynamic field keys first, then event columns
  */
-const getOrderedHeaders = (maxEvents: number): string[] => {
-  const headers = [
-    'Empresa', 'CNPJ', 'Centro de Custo', 'Tipo de Folha', 'Competência',
-    'Folha Nº', 'Código Funcionário', 'Nome Funcionário', 'CBO',
-    'Departamento', 'Filial', 'Cargo',
-  ];
+const getOrderedHeaders = (fieldKeys: string[], maxEvents: number): string[] => {
+  const headers = [...fieldKeys];
 
   for (let i = 1; i <= maxEvents; i++) {
     headers.push(
@@ -85,22 +83,16 @@ const getOrderedHeaders = (maxEvents: number): string[] => {
     );
   }
 
-  headers.push(
-    'Data de Admissão', 'Salário Base', 'Total Vencimentos', 'Total Descontos',
-    'Valor Líquido', 'Base INSS', 'Base FGTS', 'FGTS do Mês', 'Base IRRF',
-    'IRRF', 'Banco', 'Agência', 'Conta Corrente',
-  );
-
   return headers;
 };
 
 export const exportToExcel = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
   const maxEvents = getMaxEvents(data);
-  const rows = buildExcelRows(data, maxEvents);
-  const allHeaders = getOrderedHeaders(maxEvents);
+  const fieldKeys = collectFieldKeys(data);
+  const rows = buildExcelRows(data, fieldKeys, maxEvents);
+  const allHeaders = getOrderedHeaders(fieldKeys, maxEvents);
   const headers = selectedColumns ? allHeaders.filter(h => selectedColumns.includes(h)) : allHeaders;
 
-  // Filter rows to only include selected columns
   const filteredRows = rows.map(row => {
     const filtered: Record<string, string> = {};
     headers.forEach(h => { filtered[h] = row[h] || ''; });
@@ -117,8 +109,9 @@ export const exportToExcel = (data: ExtractedData, filename: string, selectedCol
 
 export const exportToCSV = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
   const maxEvents = getMaxEvents(data);
-  const rows = buildExcelRows(data, maxEvents);
-  const allHeaders = getOrderedHeaders(maxEvents);
+  const fieldKeys = collectFieldKeys(data);
+  const rows = buildExcelRows(data, fieldKeys, maxEvents);
+  const allHeaders = getOrderedHeaders(fieldKeys, maxEvents);
   const headers = selectedColumns ? allHeaders.filter(h => selectedColumns.includes(h)) : allHeaders;
 
   const csvRows: string[][] = [headers];
@@ -136,4 +129,21 @@ export const exportToCSV = (data: ExtractedData, filename: string, selectedColum
   link.download = `${filename}.csv`;
   link.click();
   URL.revokeObjectURL(link.href);
+};
+
+/** Collect all available columns (field keys + event columns) for column selector */
+export const getAllAvailableColumns = (data: ExtractedData): { fieldColumns: string[]; eventColumns: string[] } => {
+  const fieldColumns = collectFieldKeys(data);
+  const maxEvents = getMaxEvents(data);
+  const eventColumns: string[] = [];
+  for (let i = 1; i <= maxEvents; i++) {
+    eventColumns.push(
+      `Código Evento linha ${i}`,
+      `Descrição Evento linha ${i}`,
+      `Referência linha ${i}`,
+      `Valor Vencimento linha ${i}`,
+      `Valor Desconto linha ${i}`,
+    );
+  }
+  return { fieldColumns, eventColumns };
 };
