@@ -56,6 +56,16 @@ export interface ExtractedMonth {
   filial?: string;
   cargo?: string;
   dataAdmissao?: string;
+  endereco?: string;
+  bairro?: string;
+  cidade?: string;
+  cep?: string;
+  uf?: string;
+  pis?: string;
+  cpf?: string;
+  identidade?: string;
+  dataCredito?: string;
+  depSalFam?: string;
   eventos?: PayslipEvent[];
   salarioBase?: string;
   totalVencimentos?: string;

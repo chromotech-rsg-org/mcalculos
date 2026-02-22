@@ -511,7 +511,17 @@ const DocumentDetail: React.FC = () => {
                             { label: 'Filial', field: 'filial' },
                             { label: 'Cargo', field: 'cargo' },
                             { label: 'Data Admissão', field: 'dataAdmissao' },
-                          ].map(({ label, field }) => (
+                            { label: 'Endereço', field: 'endereco' },
+                            { label: 'Bairro', field: 'bairro' },
+                            { label: 'Cidade', field: 'cidade' },
+                            { label: 'CEP', field: 'cep' },
+                            { label: 'UF', field: 'uf' },
+                            { label: 'PIS', field: 'pis' },
+                            { label: 'CPF', field: 'cpf' },
+                            { label: 'Identidade', field: 'identidade' },
+                            { label: 'Data Crédito', field: 'dataCredito' },
+                            { label: 'Dep. Sal. Fam.', field: 'depSalFam' },
+                          ].filter(({ field }) => (month as any)[field]).map(({ label, field }) => (
                             <div key={field}>
                               <p className="text-muted-foreground text-xs">{label}</p>
                               <div className="font-medium text-xs">
@@ -574,7 +584,7 @@ const DocumentDetail: React.FC = () => {
                             { label: 'Banco', field: 'banco' },
                             { label: 'Agência', field: 'agencia' },
                             { label: 'Conta Corrente', field: 'contaCorrente' },
-                          ].map(({ label, field }) => (
+                          ].filter(({ field }) => (month as any)[field]).map(({ label, field }) => (
                             <div key={field}>
                               <p className="text-muted-foreground text-xs">{label}</p>
                               <div className="font-medium text-xs">
