@@ -304,7 +304,7 @@ const extractEmployee = (lines: LayoutLine[]): {
               const next = items[k + 1]?.str.trim() || '';
               if (/^Admiss/i.test(next) || /^\d{2}\/\d{2}\/\d{4}$/.test(next)) break;
             }
-            if (/^(Endere[cç]o|Bairro|Cidade|Sal[aá]rio|CEP|UF$)/i.test(val)) break;
+            if (/^(Endere[cç]o|Bairro|Cidade|Sal[aá]rio|CEP|UF|PIS|CPF|Identidade|Matr[ií]cula|Nome|Registro|Banco|Ag[eê]ncia)$/i.test(val)) break;
             if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) break;
             parts.push(val);
           }
@@ -316,7 +316,7 @@ const extractEmployee = (lines: LayoutLine[]): {
       }
       // Regex fallback — handle "Data Admissão" boundary properly
       if (!result.cargo) {
-        const cargoMatch = text.match(/(?:Cargo|Fun[cç][aã]o)[:\s]*([A-ZÀ-Úa-zà-ú\s./-]+?)(?:\s+Data\s*Admiss|\s+Endere|\s+\d{2}\/\d{2}\/\d{4}|\s*$)/i);
+        const cargoMatch = text.match(/(?:Cargo|Fun[cç][aã]o)[:\s]*([A-ZÀ-Úa-zà-ú\s.\/\-]+?)(?:\s+Data\s*Admiss|\s+Endere|\s+Sal[aá]rio|\s+\d{2}\/\d{2}\/\d{4}|\s*$)/i);
         if (cargoMatch && cargoMatch[1].trim().length > 1) result.cargo = cargoMatch[1].trim();
       }
     }
