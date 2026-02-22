@@ -1,4 +1,4 @@
-import { ExtractedMonth, ExtractedField, PayslipEvent } from '@/types';
+import { ExtractedMonth, ExtractedField, PayslipEvent, ExtractionTemplate } from '@/types';
 import { TextItem, LayoutLine, groupIntoLines, findColumnX, classifyValueColumn } from './pdf-layout';
 
 export interface Pattern1aResult {
@@ -1240,4 +1240,27 @@ export const extractPattern1a = (pagesItems: TextItem[][]): Pattern1aResult => {
   }
 
   return { employeeName, cnpj, months };
+};
+
+/**
+ * Apply an ExtractionTemplate to extracted months:
+ * - Rename fields where mappedKey differs from originalKey
+ * - Remove fields marked as ignored
+ */
+export const applyTemplate = (months: ExtractedMonth[], template: ExtractionTemplate): ExtractedMonth[] => {
+  return months.map(month => {
+    const updatedFields = (month.fields || [])
+      .filter(f => {
+        const mapping = template.fieldMappings.find(m => m.originalKey === f.key);
+        return !mapping || !mapping.ignore;
+      })
+      .map(f => {
+        const mapping = template.fieldMappings.find(m => m.originalKey === f.key);
+        if (mapping && mapping.mappedKey !== mapping.originalKey) {
+          return { ...f, key: mapping.mappedKey };
+        }
+        return f;
+      });
+    return { ...month, fields: updatedFields };
+  });
 };

@@ -79,6 +79,7 @@ export interface ExtractedMonth {
   banco?: string;
   agencia?: string;
   contaCorrente?: string;
+  validationStatus?: 'pending' | 'validated' | 'partial';
 }
 
 export interface ExtractedData {
@@ -90,12 +91,28 @@ export interface ExtractedData {
   extractedAt: string;
 }
 
+export interface FieldMapping {
+  originalKey: string;
+  mappedKey: string;
+  ignore: boolean;
+  validated: boolean;
+}
+
+export interface ExtractionTemplate {
+  id: string;
+  name: string;
+  fieldMappings: FieldMapping[];
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Document {
   id: string;
   userId: string;
   name: string;
   description: string;
   payslipPattern?: string;
+  templateId?: string;
   files: DocumentFile[];
   extractedData: ExtractedData | null;
   status: 'pending' | 'extracting' | 'extracted' | 'error';

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ArrowLeft, FileText, Download, Trash2, Edit2, Save, X, Loader2, FileSpreadsheet, AlertCircle, CheckCircle, RefreshCw, LayoutList } from 'lucide-react';
+import { ArrowLeft, FileText, Download, Trash2, Edit2, Save, X, Loader2, FileSpreadsheet, AlertCircle, CheckCircle, RefreshCw, LayoutList, ClipboardCheck } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -17,6 +17,7 @@ import { extractDataFromPDF, extractDataFromImage } from '@/lib/extraction';
 import { exportToExcel, exportToCSV } from '@/lib/export';
 import DataTableView from '@/components/documents/DataTableView';
 import ExportColumnSelector from '@/components/documents/ExportColumnSelector';
+import ValidationView from '@/components/documents/ValidationView';
 
 const PATTERN_OPTIONS = [
   { value: 'auto', label: 'Auto-detectar' },
@@ -435,6 +436,12 @@ const DocumentDetail: React.FC = () => {
             <LayoutList className="h-4 w-4 mr-1" />
             Lista
           </TabsTrigger>
+          {doc.extractedData && (
+            <TabsTrigger value="validate">
+              <ClipboardCheck className="h-4 w-4 mr-1" />
+              Validar
+            </TabsTrigger>
+          )}
         </TabsList>
 
         {/* Detalhado: side by side PDF + Extracted Data */}
@@ -578,6 +585,33 @@ const DocumentDetail: React.FC = () => {
             <Card>
               <CardContent className="flex items-center justify-center h-64 text-muted-foreground text-sm">
                 <p>Extraia os dados para visualizá-los aqui</p>
+              </CardContent>
+            </Card>
+          )}
+        </TabsContent>
+        {/* Validar: field validation and template learning */}
+        <TabsContent value="validate" className="mt-0">
+          {doc.extractedData ? (
+            <Card>
+              <CardContent className="p-4">
+                <ValidationView
+                  data={doc.extractedData}
+                  onUpdate={(updatedData) => {
+                    const updatedDoc = {
+                      ...doc,
+                      extractedData: updatedData,
+                      updatedAt: new Date().toISOString(),
+                    };
+                    setDoc(updatedDoc);
+                    saveDocument(updatedDoc);
+                  }}
+                />
+              </CardContent>
+            </Card>
+          ) : (
+            <Card>
+              <CardContent className="flex items-center justify-center h-64 text-muted-foreground text-sm">
+                <p>Extraia os dados para validá-los aqui</p>
               </CardContent>
             </Card>
           )}
