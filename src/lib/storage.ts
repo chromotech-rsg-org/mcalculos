@@ -1,9 +1,10 @@
-import { User, Document, AuthState } from '@/types';
+import { User, Document, AuthState, ExtractionTemplate } from '@/types';
 
 const STORAGE_KEYS = {
   AUTH: 'mcalculos_auth',
   DOCUMENTS: 'mcalculos_documents',
   USERS: 'mcalculos_users',
+  TEMPLATES: 'mcalculos_templates',
 };
 
 // Auth Storage
@@ -131,6 +132,32 @@ export const getStorageUsage = (): { used: number; max: number; percentage: numb
     max: maxSize,
     percentage: (total / maxSize) * 100,
   };
+};
+
+// Templates Storage
+export const getTemplates = (): ExtractionTemplate[] => {
+  const data = localStorage.getItem(STORAGE_KEYS.TEMPLATES);
+  return data ? JSON.parse(data) : [];
+};
+
+export const saveTemplate = (template: ExtractionTemplate): void => {
+  const templates = getTemplates();
+  const existingIndex = templates.findIndex(t => t.id === template.id);
+  if (existingIndex >= 0) {
+    templates[existingIndex] = { ...template, updatedAt: new Date().toISOString() };
+  } else {
+    templates.push(template);
+  }
+  localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
+};
+
+export const deleteTemplate = (templateId: string): void => {
+  const templates = getTemplates().filter(t => t.id !== templateId);
+  localStorage.setItem(STORAGE_KEYS.TEMPLATES, JSON.stringify(templates));
+};
+
+export const getTemplateById = (templateId: string): ExtractionTemplate | undefined => {
+  return getTemplates().find(t => t.id === templateId);
 };
 
 // Generate unique ID
