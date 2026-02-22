@@ -10,6 +10,7 @@ interface SearchableFieldSelectProps {
   value: string;
   options: string[];
   onSelect: (value: string) => void;
+  onCustomSelect?: (value: string) => void;
   placeholder?: string;
   className?: string;
 }
@@ -18,6 +19,7 @@ const SearchableFieldSelect: React.FC<SearchableFieldSelectProps> = ({
   value,
   options,
   onSelect,
+  onCustomSelect,
   placeholder = 'Selecionar...',
   className,
 }) => {
@@ -52,7 +54,11 @@ const SearchableFieldSelect: React.FC<SearchableFieldSelectProps> = ({
                 onSelect={() => {
                   const custom = prompt('Digite o valor personalizado:', value);
                   if (custom?.trim()) {
-                    onSelect(custom.trim());
+                    if (onCustomSelect) {
+                      onCustomSelect(custom.trim());
+                    } else {
+                      onSelect(custom.trim());
+                    }
                   }
                   setOpen(false);
                 }}

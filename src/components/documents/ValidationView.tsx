@@ -23,10 +23,18 @@ interface ValidationViewProps {
 
 interface FieldState {
   id: string;
-  assignedKey: string;
-  assignedValue: string;
+  /** The original key from extraction */
   originalKey: string;
-  originalValue: string;
+  /** The assigned/renamed key */
+  assignedKey: string;
+  /** Sample value from first month (for display only) */
+  sampleValue: string;
+  /** How the value was assigned */
+  valueSource: 'original' | 'custom' | 'mapped';
+  /** Custom value typed by user (applies to ALL months) */
+  customValue?: string;
+  /** If mapped: the original key whose per-month values should be used */
+  mappedToKey?: string;
   status: 'pending' | 'validated' | 'ignored';
   parentId?: string;
   children?: string[];
@@ -53,27 +61,41 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<'fields' | 'events'>('fields');
 
-  // Build field list from all months
+  // Collect all event keys to exclude from fields tab
+  const eventKeys = useMemo(() => {
+    const keys = new Set<string>();
+    data.months.forEach(month => {
+      month.eventos?.forEach(ev => {
+        if (ev.descricao) keys.add(ev.descricao.trim().toLowerCase());
+      });
+    });
+    return keys;
+  }, [data]);
+
+  // Build unique field list (by key) across all months - exclude event-like fields
   const initialFields = useMemo(() => {
     const seen = new Map<string, FieldState>();
     data.months.forEach(month => {
       month.fields?.forEach(f => {
+        // Skip fields that are actually event descriptions
+        if (eventKeys.has(f.key.trim().toLowerCase())) return;
+
         if (!seen.has(f.key)) {
           seen.set(f.key, {
             id: f.key,
-            assignedKey: f.key,
-            assignedValue: f.value,
             originalKey: f.key,
-            originalValue: f.value,
+            assignedKey: f.key,
+            sampleValue: f.value,
+            valueSource: 'original',
             status: 'pending',
           });
         }
       });
     });
     return Array.from(seen.values());
-  }, [data]);
+  }, [data, eventKeys]);
 
-  // Build events list from all months
+  // Build events list (unique across all months)
   const initialEvents = useMemo(() => {
     const events: EventState[] = [];
     const seen = new Set<string>();
@@ -102,22 +124,51 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
   const [events, setEvents] = useState<EventState[]>(initialEvents);
   const [selectedEvents, setSelectedEvents] = useState<Set<string>>(new Set());
 
-  // Pool of all extracted strings (keys + values) for dropdowns
-  const allStrings = useMemo(() => {
+  // Pool of all unique strings (keys + values) for the "title" dropdown
+  const allKeys = useMemo(() => {
     const set = new Set<string>();
     data.months.forEach(month => {
       month.fields?.forEach(f => {
         if (f.key?.trim()) set.add(f.key.trim());
-        if (f.value?.trim()) set.add(f.value.trim());
-      });
-      // Also include event descriptions and values
-      month.eventos?.forEach(ev => {
-        if (ev.descricao?.trim()) set.add(ev.descricao.trim());
-        if (ev.vencimento?.trim()) set.add(ev.vencimento.trim());
-        if (ev.desconto?.trim()) set.add(ev.desconto.trim());
       });
     });
     return Array.from(set).sort();
+  }, [data]);
+
+  // Pool of all unique values for the "value" dropdown
+  const allValues = useMemo(() => {
+    const set = new Set<string>();
+    data.months.forEach(month => {
+      month.fields?.forEach(f => {
+        if (f.value?.trim()) set.add(f.value.trim());
+      });
+    });
+    return Array.from(set).sort();
+  }, [data]);
+
+  // Build a reverse map: value → original key (for mapping)
+  const valueToOriginalKey = useMemo(() => {
+    const map = new Map<string, string>();
+    data.months.forEach(month => {
+      month.fields?.forEach(f => {
+        if (f.value?.trim() && f.key?.trim()) {
+          if (!map.has(f.value.trim())) {
+            map.set(f.value.trim(), f.key.trim());
+          }
+        }
+      });
+    });
+    return map;
+  }, [data]);
+
+  // Check if a value varies across months for a given key
+  const fieldVariesPerMonth = useCallback((key: string): boolean => {
+    const values = new Set<string>();
+    data.months.forEach(month => {
+      const f = month.fields?.find(f => f.key === key);
+      if (f?.value) values.add(f.value);
+    });
+    return values.size > 1;
   }, [data]);
 
   // Top-level fields (not children of a group)
@@ -133,10 +184,38 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     setFields(prev => prev.map(f => f.id === id ? { ...f, ...updates } : f));
   }, []);
 
+  const handleKeySelect = useCallback((id: string, val: string) => {
+    updateField(id, { assignedKey: val });
+  }, [updateField]);
+
+  const handleValueSelect = useCallback((id: string, val: string, isCustomTyped: boolean) => {
+    if (isCustomTyped) {
+      // User typed a custom value → apply same to all months
+      updateField(id, { valueSource: 'custom', customValue: val, sampleValue: val, mappedToKey: undefined });
+    } else {
+      // User selected from pool → find which original key owns this value
+      const sourceKey = valueToOriginalKey.get(val);
+      if (sourceKey) {
+        // Map this field to use the source key's per-month values
+        updateField(id, { valueSource: 'mapped', mappedToKey: sourceKey, sampleValue: val, customValue: undefined });
+      } else {
+        // Value not found in any field - treat as custom
+        updateField(id, { valueSource: 'custom', customValue: val, sampleValue: val, mappedToKey: undefined });
+      }
+    }
+  }, [updateField, valueToOriginalKey]);
+
   const swapKeyValue = useCallback((id: string) => {
-    setFields(prev => prev.map(f =>
-      f.id === id ? { ...f, assignedKey: f.assignedValue, assignedValue: f.assignedKey } : f
-    ));
+    setFields(prev => prev.map(f => {
+      if (f.id !== id) return f;
+      return {
+        ...f,
+        assignedKey: f.sampleValue,
+        sampleValue: f.assignedKey,
+        valueSource: 'mapped',
+        mappedToKey: f.originalKey, // keep relationship
+      };
+    }));
     toast({ title: 'Título e valor trocados!' });
   }, [toast]);
 
@@ -161,13 +240,8 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     });
   };
 
-  const selectAllFields = () => {
-    setSelectedFields(new Set(topLevelFields.map(f => f.id)));
-  };
-
-  const deselectAllFields = () => {
-    setSelectedFields(new Set());
-  };
+  const selectAllFields = () => setSelectedFields(new Set(topLevelFields.map(f => f.id)));
+  const deselectAllFields = () => setSelectedFields(new Set());
 
   const bulkAction = (action: 'validated' | 'ignored' | 'pending') => {
     setFields(prev => prev.map(f => selectedFields.has(f.id) ? { ...f, status: action } : f));
@@ -239,19 +313,28 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     });
   };
 
-  // Apply & save
+  // Apply changes: per-month value resolution
   const applyToData = (): ExtractedData => {
     const updatedMonths = data.months.map(month => {
-      const updatedFields = month.fields
-        ?.filter(f => {
-          const state = fields.find(s => s.originalKey === f.key);
-          return !state || state.status !== 'ignored';
-        })
+      // Build updated fields for this month
+      const updatedFields = fields
+        .filter(f => f.status !== 'ignored')
         .map(f => {
-          const state = fields.find(s => s.originalKey === f.key);
-          if (state) return { key: state.assignedKey, value: state.assignedValue };
-          return f;
-        }) || [];
+          let value: string;
+          if (f.valueSource === 'custom' && f.customValue !== undefined) {
+            // Custom typed → same for all months
+            value = f.customValue;
+          } else if (f.valueSource === 'mapped' && f.mappedToKey) {
+            // Mapped → use the source key's value for THIS month
+            const sourceField = month.fields?.find(mf => mf.key === f.mappedToKey);
+            value = sourceField?.value || f.sampleValue;
+          } else {
+            // Original → keep this month's own value
+            const originalField = month.fields?.find(mf => mf.key === f.originalKey);
+            value = originalField?.value || f.sampleValue;
+          }
+          return { key: f.assignedKey, value };
+        });
 
       const updatedEvents = month.eventos
         ?.filter(ev => {
@@ -334,6 +417,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
 
   const renderFieldCard = (field: FieldState, isChild = false) => {
     const children = fields.filter(f => f.parentId === field.id);
+    const varies = field.valueSource === 'original' && fieldVariesPerMonth(field.originalKey);
 
     return (
       <Card
@@ -345,7 +429,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
         } ${isChild ? 'ml-4 border-l-2 border-l-primary/30' : ''}`}
       >
         <CardContent className="p-3 space-y-2">
-          {/* Selection checkbox (not in group mode) */}
+          {/* Selection checkbox */}
           {!groupMode && !isChild && (
             <div className="flex items-center gap-2">
               <Checkbox
@@ -373,13 +457,13 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
             </div>
           )}
 
-          {/* Title (Key) selector - searchable */}
+          {/* Title (Key) selector */}
           <div className="space-y-1">
             <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Título</Label>
             <SearchableFieldSelect
               value={field.assignedKey}
-              options={allStrings}
-              onSelect={(val) => updateField(field.id, { assignedKey: val })}
+              options={allKeys}
+              onSelect={(val) => handleKeySelect(field.id, val)}
               placeholder="Selecionar título..."
             />
           </div>
@@ -398,27 +482,40 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
             </Button>
           </div>
 
-          {/* Value selector - searchable */}
+          {/* Value selector */}
           <div className="space-y-1">
-            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">Valor</Label>
+            <Label className="text-[10px] uppercase tracking-wider text-muted-foreground">
+              Valor
+              {varies && (
+                <Badge variant="outline" className="ml-1 text-[9px] px-1 py-0 font-normal">
+                  varia por holerite
+                </Badge>
+              )}
+            </Label>
             <SearchableFieldSelect
-              value={field.assignedValue}
-              options={allStrings}
-              onSelect={(val) => updateField(field.id, { assignedValue: val })}
+              value={field.sampleValue}
+              options={allValues}
+              onSelect={(val) => handleValueSelect(field.id, val, false)}
+              onCustomSelect={(val) => handleValueSelect(field.id, val, true)}
               placeholder="Selecionar valor..."
             />
           </div>
 
-          {/* Changes indicator */}
+          {/* Source indicator */}
           <div className="flex flex-wrap gap-1">
             {field.assignedKey !== field.originalKey && (
               <Badge variant="secondary" className="text-[10px] px-1 py-0">
                 título: era "{field.originalKey.substring(0, 20)}"
               </Badge>
             )}
-            {field.assignedValue !== field.originalValue && (
+            {field.valueSource === 'custom' && (
               <Badge variant="secondary" className="text-[10px] px-1 py-0">
-                valor alterado
+                valor fixo (todos holerites)
+              </Badge>
+            )}
+            {field.valueSource === 'mapped' && field.mappedToKey && field.mappedToKey !== field.originalKey && (
+              <Badge variant="secondary" className="text-[10px] px-1 py-0">
+                mapeado: {field.mappedToKey.substring(0, 20)}
               </Badge>
             )}
           </div>
@@ -641,98 +738,100 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
             )}
           </div>
 
-          <ScrollArea className="max-h-[500px]">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-10"></TableHead>
-                  <TableHead className="text-xs">CÓD.</TableHead>
-                  <TableHead className="text-xs">Descrição</TableHead>
-                  <TableHead className="text-xs">QTDE.</TableHead>
-                  <TableHead className="text-xs">Vencimentos</TableHead>
-                  <TableHead className="text-xs">Descontos</TableHead>
-                  <TableHead className="text-xs w-24">Status</TableHead>
-                  <TableHead className="text-xs w-24">Ações</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {events.map(ev => (
-                  <TableRow
-                    key={ev.id}
-                    className={
-                      ev.status === 'validated' ? 'bg-primary/5' :
-                      ev.status === 'ignored' ? 'bg-muted/30 opacity-60' : ''
-                    }
-                  >
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedEvents.has(ev.id)}
-                        onCheckedChange={() => toggleEventSelection(ev.id)}
-                      />
-                    </TableCell>
-                    <TableCell className="text-xs font-mono">{ev.codigo}</TableCell>
-                    <TableCell>
-                      <Input
-                        value={ev.descricao}
-                        onChange={e => updateEvent(ev.id, { descricao: e.target.value })}
-                        className="h-7 text-xs"
-                      />
-                    </TableCell>
-                    <TableCell className="text-xs">{ev.referencia}</TableCell>
-                    <TableCell>
-                      <Input
-                        value={ev.vencimento}
-                        onChange={e => updateEvent(ev.id, { vencimento: e.target.value })}
-                        className="h-7 text-xs w-24"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Input
-                        value={ev.desconto}
-                        onChange={e => updateEvent(ev.id, { desconto: e.target.value })}
-                        className="h-7 text-xs w-24"
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <Badge
-                        variant={ev.status === 'validated' ? 'default' : ev.status === 'ignored' ? 'destructive' : 'secondary'}
-                        className="text-[10px]"
-                      >
-                        {ev.status === 'validated' ? 'OK' : ev.status === 'ignored' ? 'Ignorado' : 'Pendente'}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex gap-1">
-                        <Button
-                          size="sm"
-                          variant={ev.status === 'validated' ? 'default' : 'ghost'}
-                          className="h-6 w-6 p-0"
-                          onClick={() => toggleEventValidated(ev.id)}
-                        >
-                          <Check className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant={ev.status === 'ignored' ? 'destructive' : 'ghost'}
-                          className="h-6 w-6 p-0"
-                          onClick={() => toggleEventIgnored(ev.id)}
-                        >
-                          <EyeOff className="h-3 w-3" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-                {events.length === 0 && (
+          <div className="border rounded-md">
+            <ScrollArea className="h-[500px]">
+              <Table>
+                <TableHeader>
                   <TableRow>
-                    <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
-                      Nenhum evento/tabela encontrado neste documento.
-                    </TableCell>
+                    <TableHead className="w-10"></TableHead>
+                    <TableHead className="text-xs">CÓD.</TableHead>
+                    <TableHead className="text-xs">Descrição</TableHead>
+                    <TableHead className="text-xs">QTDE.</TableHead>
+                    <TableHead className="text-xs">Vencimentos</TableHead>
+                    <TableHead className="text-xs">Descontos</TableHead>
+                    <TableHead className="text-xs w-24">Status</TableHead>
+                    <TableHead className="text-xs w-24">Ações</TableHead>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </ScrollArea>
+                </TableHeader>
+                <TableBody>
+                  {events.map(ev => (
+                    <TableRow
+                      key={ev.id}
+                      className={
+                        ev.status === 'validated' ? 'bg-primary/5' :
+                        ev.status === 'ignored' ? 'bg-muted/30 opacity-60' : ''
+                      }
+                    >
+                      <TableCell>
+                        <Checkbox
+                          checked={selectedEvents.has(ev.id)}
+                          onCheckedChange={() => toggleEventSelection(ev.id)}
+                        />
+                      </TableCell>
+                      <TableCell className="text-xs font-mono">{ev.codigo}</TableCell>
+                      <TableCell>
+                        <Input
+                          value={ev.descricao}
+                          onChange={e => updateEvent(ev.id, { descricao: e.target.value })}
+                          className="h-7 text-xs"
+                        />
+                      </TableCell>
+                      <TableCell className="text-xs">{ev.referencia}</TableCell>
+                      <TableCell>
+                        <Input
+                          value={ev.vencimento}
+                          onChange={e => updateEvent(ev.id, { vencimento: e.target.value })}
+                          className="h-7 text-xs w-24"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Input
+                          value={ev.desconto}
+                          onChange={e => updateEvent(ev.id, { desconto: e.target.value })}
+                          className="h-7 text-xs w-24"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Badge
+                          variant={ev.status === 'validated' ? 'default' : ev.status === 'ignored' ? 'destructive' : 'secondary'}
+                          className="text-[10px]"
+                        >
+                          {ev.status === 'validated' ? 'OK' : ev.status === 'ignored' ? 'Ignorado' : 'Pendente'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant={ev.status === 'validated' ? 'default' : 'ghost'}
+                            className="h-6 w-6 p-0"
+                            onClick={() => toggleEventValidated(ev.id)}
+                          >
+                            <Check className="h-3 w-3" />
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant={ev.status === 'ignored' ? 'destructive' : 'ghost'}
+                            className="h-6 w-6 p-0"
+                            onClick={() => toggleEventIgnored(ev.id)}
+                          >
+                            <EyeOff className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                  {events.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
+                        Nenhum evento/tabela encontrado neste documento.
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </ScrollArea>
+          </div>
         </>
       )}
 
