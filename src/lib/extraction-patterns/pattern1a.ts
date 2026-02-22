@@ -228,7 +228,14 @@ const extractEmployee = (lines: LayoutLine[]): {
           for (let k = j + 1; k < items.length; k++) {
             const val = items[k].str.trim();
             if (!val) continue;
-            if (/^(Data|Admiss|Endere|Bairro|Cidade|Sal[aá]rio)/i.test(val)) break;
+            // Stop at "Data Admissão" but not standalone "Data" that's part of cargo name
+            if (/^Data\s*Admiss/i.test(val)) break;
+            if (/^Data$/i.test(val)) {
+              // Peek at next item — if it starts with "Admiss" it's the label, not cargo
+              const next = items[k + 1]?.str.trim() || '';
+              if (/^Admiss/i.test(next) || /^\d{2}\/\d{2}\/\d{4}$/.test(next)) break;
+            }
+            if (/^(Endere[cç]o|Bairro|Cidade|Sal[aá]rio|CEP|UF$)/i.test(val)) break;
             if (/^\d{2}\/\d{2}\/\d{4}$/.test(val)) break;
             parts.push(val);
           }
@@ -238,9 +245,9 @@ const extractEmployee = (lines: LayoutLine[]): {
           break;
         }
       }
-      // Regex fallback
+      // Regex fallback — handle "Data Admissão" boundary properly
       if (!result.cargo) {
-        const cargoMatch = text.match(/(?:Cargo|Fun[cç][aã]o)[:\s]*([A-ZÀ-Úa-zà-ú\s./-]+?)(?:\s+Data|\s+Admiss|\s+\d{2}\/|\s*$)/i);
+        const cargoMatch = text.match(/(?:Cargo|Fun[cç][aã]o)[:\s]*([A-ZÀ-Úa-zà-ú\s./-]+?)(?:\s+Data\s*Admiss|\s+Endere|\s+\d{2}\/\d{2}\/\d{4}|\s*$)/i);
         if (cargoMatch && cargoMatch[1].trim().length > 1) result.cargo = cargoMatch[1].trim();
       }
     }
@@ -366,7 +373,10 @@ const extractEvents = (lines: LayoutLine[]): {
     const hasEvento = /\bEvento\b/i.test(text);
     const hasDiscriminacao = /Discrimina[cç][aã]o/i.test(text);
     
-    if ((hasCodigo && hasDescricao && hasVenc) || (hasEvento && hasDiscriminacao && hasVenc)) {
+    // Layout C: "Discriminação das parcelas" standalone header
+    const hasDiscParcelas = /Discrimina[cç][aã]o\s+das\s+parcelas/i.test(text);
+    
+    if ((hasCodigo && hasDescricao && hasVenc) || (hasEvento && hasDiscriminacao && hasVenc) || (hasDiscParcelas && hasVenc)) {
       headerIdx = i;
       vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Proventos');
       descX = findColumnX(lines[i], 'Descontos');
@@ -424,7 +434,7 @@ const extractEvents = (lines: LayoutLine[]): {
       continue;
     }
     
-    // Valor Líquido / Líquido a Receber
+    // Valor Líquido / Líquido a Receber (with optional => arrow)
     if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber)/i.test(text)) {
       const vals = line.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
       if (vals.length > 0) {
@@ -444,6 +454,7 @@ const extractEvents = (lines: LayoutLine[]): {
     if (/Sal\.\s*Contr/i.test(text)) break;
     if (/Base\s+para\s+FGTS/i.test(text)) break;
     if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text)) break;
+    if (/Local\s+do\s+Pagamento/i.test(text)) break;
     
     // Parse event line: starts with 3-4 digit code
     const codeItem = line.items.find(it => /^\d{3,4}$/.test(it.str.trim()));
@@ -561,29 +572,53 @@ const extractFooter = (lines: LayoutLine[]): {
     }
     
     // Style B: Individual labeled fields (one per line or per section)
+    // Helper: get first numeric value with comma from line or next line
+    const getFirstVal = (idx: number): string => {
+      const v = lines[idx].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+      if (v.length > 0) return v[0].str.trim();
+      if (idx + 1 < lines.length) {
+        const nv = lines[idx + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nv.length > 0) return nv[0].str.trim();
+      }
+      return '';
+    };
+
     if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !result.salarioBase) {
-      const vals = items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (vals.length > 0) result.salarioBase = vals[0].str.trim();
+      const v = getFirstVal(i);
+      if (v) result.salarioBase = v;
     }
-    if (/Base\s+para\s+FGTS/i.test(text) && !result.baseFgts) {
-      const vals = items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (vals.length > 0) result.baseFgts = vals[0].str.trim();
+    // "Composição do Salário" line with "Salário Fixo" value on same or next line
+    if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text) && !result.salarioBase) {
+      // Look at next lines for "Salário Fixo" or just a numeric value
+      for (let k = i + 1; k < Math.min(i + 3, lines.length); k++) {
+        if (/Sal[aá]rio\s+Fixo/i.test(lines[k].text)) {
+          const v = lines[k].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+          if (v.length > 0) { result.salarioBase = v[0].str.trim(); break; }
+        }
+      }
+    }
+    if (/Base\s+(?:para\s+)?FGTS/i.test(text) && !result.baseFgts) {
+      const v = getFirstVal(i);
+      if (v) result.baseFgts = v;
     }
     if (/FGTS\s+do\s+m[eê]s/i.test(text) && !result.fgtsMes) {
-      const vals = items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (vals.length > 0) result.fgtsMes = vals[0].str.trim();
+      const v = getFirstVal(i);
+      if (v) result.fgtsMes = v;
     }
     if (/Base\s+(Cal\.?\s*)?IRRF/i.test(text) && !result.baseIrrf) {
-      const vals = items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (vals.length > 0) result.baseIrrf = vals[0].str.trim();
+      const v = getFirstVal(i);
+      if (v) result.baseIrrf = v;
     }
-    if (/Sal\.?\s*Cont\.?\s*INSS/i.test(text) && !result.baseInss) {
-      const vals = items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (vals.length > 0) result.baseInss = vals[0].str.trim();
+    if (/Pens[aã]o\s+Alim/i.test(text) && !result.baseIrrf) {
+      // Sometimes "Pensão Alim. Extra Folha" line contains IRRF base nearby
+    }
+    if (/Sal\.?\s*Cont?\.?\s*INSS/i.test(text) && !result.baseInss) {
+      const v = getFirstVal(i);
+      if (v) result.baseInss = v;
     }
     if (/Base\s+INSS/i.test(text) && !result.baseInss) {
-      const vals = items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (vals.length > 0) result.baseInss = vals[0].str.trim();
+      const v = getFirstVal(i);
+      if (v) result.baseInss = v;
     }
   }
   
@@ -598,85 +633,97 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
     const text = line.text;
     const items = line.items;
     
-    // Look for labeled "Banco", "Agência", "C/C" or "Conta"
-    if (!result.banco) {
-      // Item-based: find "Banco" label
+    // Strategy 1: Labels on one line, values on same line after label (e.g. "Banco  033  Agência  82  C/C  00071...")
+    // or labels on one line and values on next line
+    const hasBancoLabel = items.some(it => /^Banco$/i.test(it.str.trim()));
+    const hasAgLabel = items.some(it => /^Ag[eê]ncia$/i.test(it.str.trim()));
+    const hasCCLabel = items.some(it => /^(C\/C|Conta)$/i.test(it.str.trim()));
+    
+    if (hasBancoLabel || hasAgLabel || hasCCLabel) {
+      // Collect label-value pairs from items on this line
       for (let j = 0; j < items.length; j++) {
-        if (/^Banco$/i.test(items[j].str.trim())) {
-          // Value is on next line at similar X position, or next items
-          // Check next line first (common in labeled layouts)
-          if (i + 1 < lines.length) {
-            const nextItems = lines[i + 1].items.sort((a, b) => a.x - b.x);
-            // Find item closest to "Banco" X position
-            const bancoX = items[j].x;
+        const label = items[j].str.trim();
+        
+        if (/^Banco$/i.test(label) && !result.banco) {
+          // Next item on same line is value
+          if (j + 1 < items.length) {
+            const nextVal = items[j + 1].str.trim();
+            if (nextVal && !/^(Ag[eê]ncia|C\/C|Conta|Local)$/i.test(nextVal)) {
+              result.banco = nextVal;
+            }
+          }
+        }
+        if (/^Ag[eê]ncia$/i.test(label) && !result.agencia) {
+          if (j + 1 < items.length) {
+            const nextVal = items[j + 1].str.trim();
+            if (nextVal && !/^(C\/C|Conta|Banco)$/i.test(nextVal) && /[\d]/.test(nextVal)) {
+              result.agencia = nextVal;
+            }
+          }
+        }
+        if (/^(C\/C|Conta)$/i.test(label) && !result.contaCorrente) {
+          if (j + 1 < items.length) {
+            const nextVal = items[j + 1].str.trim();
+            if (nextVal && /[\d]/.test(nextVal)) {
+              result.contaCorrente = nextVal;
+            }
+          }
+        }
+      }
+      
+      // Fallback: values on next line at similar X positions
+      if ((!result.banco || !result.agencia || !result.contaCorrente) && i + 1 < lines.length) {
+        const nextItems = lines[i + 1].items.sort((a, b) => a.x - b.x);
+        for (let j = 0; j < items.length; j++) {
+          const label = items[j].str.trim();
+          const labelX = items[j].x;
+          
+          if (/^Banco$/i.test(label) && !result.banco) {
             for (const ni of nextItems) {
-              if (Math.abs(ni.x - bancoX) < 80 && ni.str.trim().length > 0) {
+              if (Math.abs(ni.x - labelX) < 100 && ni.str.trim().length > 0) {
                 result.banco = ni.str.trim();
                 break;
               }
             }
           }
-          break;
-        }
-      }
-    }
-    
-    if (!result.agencia) {
-      const agMatch = text.match(/Ag[eê]ncia[:\s]*([\d-]+)/i);
-      if (agMatch) result.agencia = agMatch[1].trim();
-      else {
-        // Item-based
-        for (let j = 0; j < items.length; j++) {
-          if (/^Ag[eê]ncia$/i.test(items[j].str.trim()) && i + 1 < lines.length) {
-            const agX = items[j].x;
-            const nextItems = lines[i + 1].items;
+          if (/^Ag[eê]ncia$/i.test(label) && !result.agencia) {
             for (const ni of nextItems) {
-              if (Math.abs(ni.x - agX) < 80 && /[\d-]+/.test(ni.str.trim())) {
+              if (Math.abs(ni.x - labelX) < 100 && /[\d-]+/.test(ni.str.trim())) {
                 result.agencia = ni.str.trim();
                 break;
               }
             }
-            break;
           }
-        }
-      }
-    }
-    
-    if (!result.contaCorrente) {
-      const contaMatch = text.match(/(?:Conta\s*(?:Corrente)?|C\/C)[:\s]*([\d.-]+)/i);
-      if (contaMatch) result.contaCorrente = contaMatch[1].trim();
-      else {
-        for (let j = 0; j < items.length; j++) {
-          if (/^(C\/C|Conta)$/i.test(items[j].str.trim()) && i + 1 < lines.length) {
-            const ccX = items[j].x;
-            const nextItems = lines[i + 1].items;
+          if (/^(C\/C|Conta)$/i.test(label) && !result.contaCorrente) {
             for (const ni of nextItems) {
-              if (Math.abs(ni.x - ccX) < 80 && /[\d.-]+/.test(ni.str.trim())) {
+              if (Math.abs(ni.x - labelX) < 100 && /[\d.-]+/.test(ni.str.trim())) {
                 result.contaCorrente = ni.str.trim();
                 break;
               }
             }
-            break;
           }
         }
       }
     }
     
-    // Also try bank name detection
+    // Strategy 2: Inline regex (e.g. "Banco: 033  Agência: 82  C/C: 00071...")
+    if (!result.banco) {
+      const bankMatch = text.match(/Banco[:\s]+([\d]+)/i);
+      if (bankMatch) result.banco = bankMatch[1].trim();
+    }
+    if (!result.agencia) {
+      const agMatch = text.match(/Ag[eê]ncia[:\s]*([\d-]+)/i);
+      if (agMatch) result.agencia = agMatch[1].trim();
+    }
+    if (!result.contaCorrente) {
+      const contaMatch = text.match(/(?:Conta\s*(?:Corrente)?|C\/C)[:\s]*([\d.-]+)/i);
+      if (contaMatch) result.contaCorrente = contaMatch[1].trim();
+    }
+    
+    // Strategy 3: Bank name detection
     if (!result.banco) {
       const bankMatch = text.match(/(Ita[uú]|Bradesco|Santander|Caixa|Banco\s+do\s+Brasil|BB|Sicoob|Sicredi|Nu[Bb]ank|Inter|C6)/i);
-      if (bankMatch) {
-        result.banco = bankMatch[1];
-        
-        if (!result.agencia) {
-          const agM = text.match(/Ag[eê]ncia[:\s]*([\d-]+)/i);
-          if (agM) result.agencia = agM[1].trim();
-        }
-        if (!result.contaCorrente) {
-          const contaM = text.match(/(?:Conta\s*(?:Corrente)?|CC|C\/C)[:\s]*([\d.-]+)/i);
-          if (contaM) result.contaCorrente = contaM[1].trim();
-        }
-      }
+      if (bankMatch) result.banco = bankMatch[1];
     }
     
     if (result.banco && result.agencia && result.contaCorrente) break;
