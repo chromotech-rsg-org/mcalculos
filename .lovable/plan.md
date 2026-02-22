@@ -1,77 +1,127 @@
 
-# Refactoring: Extraction 100% Dynamic with Unified Data Flow
 
-## Problem
+# Sistema de Validacao e Aprendizado de Extracao
 
-The extraction now captures fields dynamically in `month.fields[]`, but three critical components still use the old hardcoded `ExtractedMonth` properties (`empresa`, `cnpj`, `salarioBase`, etc.):
+## Objetivo
 
-1. **Export (`export.ts`)** -- builds Excel/CSV rows from hardcoded property names, ignoring `fields[]`
-2. **DataTableView** -- defines columns from hardcoded properties, ignoring `fields[]`
-3. **`extractPattern1aPage`** -- duplicates data by writing the same values into both `fields[]` AND typed properties (`month.empresa`, `month.cnpj`, etc.)
+Criar um sistema onde o usuario pode:
+- Revisar cada campo extraido lado a lado com o PDF
+- Corrigir titulos errados (ex: o sistema extraiu "Empresa" mas o valor e do "Nome")
+- Renomear campos para padronizar
+- Marcar campos como "ignorar" para futuras extracoes
+- Salvar essas regras como um "modelo aprendido" que pode ser nomeado e reutilizado
 
-This means dynamic fields extracted from varied layouts (Centro de Ensino, Keypar, A.L. IND COM) are visible in the detail view but lost when exporting or viewing in the table.
+## Como funciona
 
-## Solution
-
-Unify everything around `month.fields[]` as the single source of truth for all non-event data. Events remain in `month.eventos[]`.
+Apos a extracao, aparece uma nova aba "Validar" na tela de detalhes do documento. Nessa aba, cada campo extraido e mostrado com opcoes de acao rapida. O usuario valida, corrige ou ignora. Quando terminar, salva como modelo nomeado (ex: "Modelo Centro de Ensino", "Modelo A.L. IND COM"). Na proxima extracao, o sistema aplica as regras do modelo salvo automaticamente.
 
 ---
 
-## Technical Changes
+## Mudancas Tecnicas
 
-### 1. Simplify `extractPattern1aPage` (pattern1a.ts)
+### 1. Novos tipos em `src/types/index.ts`
 
-- Remove duplicate writes to typed properties. Only populate `fields[]` and `eventos[]`.
-- Keep `month.month` (period string) and `month.competencia` for display/sorting.
-- Keep `month.eventos`, `month.totalVencimentos`, `month.totalDescontos`, `month.valorLiquido` (these are summary fields derived from the events table).
-- Remove population of `month.empresa`, `month.cnpj`, `month.nomeFuncionario`, `month.cargo`, `month.dataAdmissao`, etc. -- these are now in `fields[]` only.
-- Improve `extractAllFields` to better handle the A.L. IND COM layout:
-  - Recognize "Agencia:" with colon and "ITAU 4446 341" as bank info
-  - Recognize "conta corrente:" as a labeled field
-  - Handle "Sal. Contr. INSS", "Base Calc. FGTS", "F.G.T.S do Mes", "Base Calc. IRRF", "Faixa IRRF" labels (with abbreviated/variant names)
-  - Skip "A TRANSPORTAR" continuation markers and "Declaro ter recebido" text
-  - Skip "PARABENS PELO SEU ANIVERSARIO" messages (add to structural filter)
-  - Filter out duplicate data (same field appearing in top and bottom halves of the page since the PDF has 2 copies per page)
+Adicionar interfaces para o sistema de mapeamento/aprendizado:
 
-### 2. Update Export (`export.ts`)
+```
+FieldMapping {
+  originalKey: string    // Titulo original extraido do PDF
+  mappedKey: string      // Titulo corrigido/padronizado pelo usuario
+  ignore: boolean        // Se true, nao mostra nas proximas extracoes
+  validated: boolean     // Se o usuario ja validou este campo
+}
 
-Replace the hardcoded `buildExcelRows` and `getOrderedHeaders` with dynamic logic:
+ExtractionTemplate {
+  id: string
+  name: string           // Nome dado pelo usuario (ex: "Modelo Keypar")
+  fieldMappings: FieldMapping[]
+  createdAt: string
+  updatedAt: string
+}
+```
 
-- **Collect all unique field keys** across all months from `fields[]`
-- **Order columns**: Period/Competencia first, then alphabetical or by first-appearance order for field keys, then event columns, then totals
-- **Build rows** by looking up `month.fields.find(f => f.key === columnKey)?.value`
-- Events columns remain as before (codigo, descricao, referencia, vencimento, desconto per event line)
-- This ensures every field from every layout variation appears in the export
+Adicionar campo opcional `validationStatus` em `ExtractedMonth`:
+```
+validationStatus?: 'pending' | 'validated' | 'partial'
+```
 
-### 3. Update DataTableView (`DataTableView.tsx`)
+Adicionar campo opcional `templateId` em `Document` para vincular o documento a um modelo.
 
-- Replace hardcoded `getBaseColumns()` with dynamic column discovery from `data.months[*].fields[*].key`
-- Collect all unique field keys across all months
-- Each column's `getValue` looks up from `month.fields[]`
-- Event columns remain as before
-- Column visibility preferences still work (stored by key)
+### 2. Storage para templates em `src/lib/storage.ts`
 
-### 4. Update DocumentDetail display (`DocumentDetail.tsx`)
+Adicionar funcoes CRUD para templates no localStorage:
+- `getTemplates(): ExtractionTemplate[]`
+- `saveTemplate(template): void`
+- `deleteTemplate(id): void`
+- `getTemplateById(id): ExtractionTemplate | undefined`
 
-- The detail view already renders `month.fields[]` dynamically -- minor cleanup only
-- Ensure the events table section still displays properly
-- Show `totalVencimentos`, `totalDescontos`, `valorLiquido` from `month` properties (they are summary values from event parsing)
+Chave: `mcalculos_templates`
 
-### 5. Improve extraction robustness (pattern1a.ts)
+### 3. Nova aba "Validar" em `src/pages/DocumentDetail.tsx`
 
-- **Duplicate page filtering**: Many PDFs have 2 copies of the same payslip on one page (employer + employee copy). Detect and skip the second copy by checking if the same "Total de Vencimentos" value appears twice on the same page.
-- **"A TRANSPORTAR" handling**: When a payslip spans 2 pages, the first page ends with "A TRANSPORTAR" and the second continues. Merge events from continuation pages into the previous month.
-- **Better footer field extraction**: Scan lines after the events table for footer fields like "Salario Base", "Base Calc. FGTS", etc. using the same generic label-value approach. The current `extractFooter` function is separate and not feeding into `fields[]` -- integrate it.
-- **Bank info integration**: Move bank info into `fields[]` instead of separate properties.
-- **Confidence tagging**: For now, skip "[baixa confianca]" tagging -- the positional extraction is reliable enough. Can be added later if OCR is integrated.
-- **observacoes_extras**: Capture birthday messages ("PARABENS...") and other non-standard text into a field called "Observacoes" in `fields[]`.
+Adicionar terceira aba alem de "Detalhado" e "Lista":
 
-### Files to modify
+**Aba "Validar"** mostra:
+- Cada campo extraido em formato de card com:
+  - Titulo original (editavel - campo de texto)
+  - Valor extraido (somente leitura)
+  - Botao "OK" (marca como validado - fica verde)
+  - Botao "Ignorar" (marca para ignorar nas proximas - fica cinza/riscado)
+  - Status visual: pendente (amarelo), validado (verde), ignorado (cinza)
 
-| File | Change |
+- No topo: barra de progresso de validacao (X de Y campos validados)
+- Botao "Salvar como Modelo" que abre dialog para nomear o modelo
+- Select para escolher um modelo existente e aplicar os mapeamentos
+
+### 4. Novo componente `src/components/documents/ValidationView.tsx`
+
+Componente dedicado para a validacao:
+- Recebe `extractedData`, `onUpdate` callback
+- Renderiza grade de cards para cada campo unico (agrupa por key)
+- Permite editar o titulo (key) de cada campo
+- Permite marcar como ignorado
+- Permite marcar como validado
+- Botao para salvar modelo
+- Botao para aplicar modelo existente
+
+### 5. Aplicar template na extracao em `src/lib/extraction-patterns/pattern1a.ts`
+
+Adicionar funcao `applyTemplate(months, template)`:
+- Percorre todos os `fields[]` de todos os meses
+- Para cada field, busca no template se existe um `FieldMapping` com `originalKey` igual
+- Se existir e `ignore === true`, remove o campo
+- Se existir e `mappedKey` diferente do original, renomeia o campo
+- Retorna os meses com campos ajustados
+
+Essa funcao e chamada apos a extracao, se o documento tem um `templateId` vinculado.
+
+### 6. Integrar no fluxo de extracao em `src/pages/DocumentDetail.tsx`
+
+Apos extracao bem-sucedida:
+- Se o documento tem `templateId`, aplica o template automaticamente
+- Mostra badge indicando "Modelo aplicado: [nome]"
+- Permite trocar ou desvincular modelo
+
+---
+
+## Arquivos a modificar
+
+| Arquivo | Mudanca |
 |---|---|
-| `src/lib/extraction-patterns/pattern1a.ts` | Integrate footer/bank into `extractAllFields`, remove duplicate property writes, handle "A TRANSPORTAR" continuation, filter duplicate copies |
-| `src/lib/export.ts` | Dynamic columns from `fields[]`, dynamic headers |
-| `src/components/documents/DataTableView.tsx` | Dynamic columns from `fields[]` |
-| `src/pages/DocumentDetail.tsx` | Minor cleanup, show totals section properly |
-| `src/types/index.ts` | No changes needed -- `fields[]` already exists on `ExtractedMonth` |
+| `src/types/index.ts` | Adicionar `FieldMapping`, `ExtractionTemplate`, `validationStatus` |
+| `src/lib/storage.ts` | CRUD de templates no localStorage |
+| `src/components/documents/ValidationView.tsx` | **NOVO** - Componente de validacao |
+| `src/pages/DocumentDetail.tsx` | Nova aba "Validar", integracao com templates |
+| `src/lib/extraction-patterns/pattern1a.ts` | Funcao `applyTemplate()` |
+
+## Fluxo do usuario
+
+1. Faz upload do PDF e extrai
+2. Abre aba "Validar"
+3. Ve todos os campos com titulo e valor
+4. Corrige titulos errados clicando no nome do campo
+5. Marca campos irrelevantes como "Ignorar"
+6. Clica "Salvar como Modelo" e da um nome (ex: "Centro de Ensino")
+7. No proximo documento similar, seleciona o modelo salvo
+8. O sistema aplica as correcoes automaticamente
+
