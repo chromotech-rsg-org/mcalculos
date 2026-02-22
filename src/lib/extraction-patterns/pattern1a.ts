@@ -1,4 +1,4 @@
-import { ExtractedMonth, PayslipEvent } from '@/types';
+import { ExtractedMonth, ExtractedField, PayslipEvent } from '@/types';
 import { TextItem, LayoutLine, groupIntoLines, findColumnX, classifyValueColumn } from './pdf-layout';
 
 export interface Pattern1aResult {
@@ -23,6 +23,17 @@ const MONTH_LABELS: Record<string, string> = {
 
 // ======== Helpers ========
 
+/** Known labels that should NOT be treated as values */
+const KNOWN_LABELS = /^(Empresa|CNPJ|Nome|Matr[ií]cula|Mat\.|Fun[cç][aã]o|Cargo|Bairro|Cidade|CEP|UF|Endere[cç]o|PIS|CPF|Identidade|Data\s*(Cr[eé]dito|Admiss[aã]o)|Dep\.?\s*sal|Banco|Ag[eê]ncia|C\/C|Conta|Compet[eê]ncia|Registro|Sal[aá]rio|Ref|Proventos|Descontos|Vencimentos|Discrimina|Evento|C[oó]digo|Descri[cç]|Local|Composi[cç]|IR$|Demonstrativo|Pagamento|Mensal|Total|Folha|Mensalista|Horista|Centro|Custo)$/i;
+
+/** Check if a string looks like a pure value (not a label) */
+const isValue = (s: string): boolean => {
+  const trimmed = s.trim();
+  if (!trimmed) return false;
+  if (KNOWN_LABELS.test(trimmed)) return false;
+  return true;
+};
+
 /** Try to find a labeled value on a line: "Label: Value" or "Label  Value" */
 const findLabeledValue = (lines: LayoutLine[], labelRegex: RegExp, startIdx = 0, endIdx?: number): string => {
   const end = endIdx ?? lines.length;
@@ -38,7 +49,7 @@ const findLabeledValue = (lines: LayoutLine[], labelRegex: RegExp, startIdx = 0,
         // Next non-empty item on same line is likely the value
         for (let k = j + 1; k < items.length; k++) {
           const val = items[k].str.trim();
-          if (val && !/^(Empresa|CNPJ|Nome|Matr|Fun[cç]|Cargo|Bairro|Cidade|CEP|UF|Endere)/i.test(val)) {
+          if (val && isValue(val)) {
             return val;
           }
         }
@@ -46,6 +57,89 @@ const findLabeledValue = (lines: LayoutLine[], labelRegex: RegExp, startIdx = 0,
     }
   }
   return '';
+};
+
+/**
+ * Dynamically scan lines for ALL label-value pairs.
+ * This captures fields regardless of their names.
+ */
+const extractDynamicFields = (lines: LayoutLine[], eventsStartIdx: number, eventsEndIdx: number): ExtractedField[] => {
+  const fields: ExtractedField[] = [];
+  const seen = new Set<string>();
+  
+  const addField = (key: string, value: string) => {
+    const k = key.trim();
+    const v = value.trim();
+    if (!k || !v || k.length < 2) return;
+    // Skip pure numbers as keys or very short keys
+    if (/^\d+$/.test(k)) return;
+    const uid = `${k}::${v}`;
+    if (seen.has(uid)) return;
+    seen.add(uid);
+    fields.push({ key: k, value: v });
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    // Skip event table lines
+    if (i >= eventsStartIdx && i <= eventsEndIdx) continue;
+    
+    const items = lines[i].items;
+    
+    // Scan items looking for label-value patterns
+    let j = 0;
+    while (j < items.length) {
+      const item = items[j];
+      const str = item.str.trim();
+      
+      // Check if this looks like a label (ends with known pattern or is followed by a value)
+      // Labels ending with ":"
+      if (str.endsWith(':') && str.length > 1) {
+        const label = str.replace(/:$/, '').trim();
+        const valueParts: string[] = [];
+        let k = j + 1;
+        while (k < items.length) {
+          const next = items[k].str.trim();
+          if (!next) { k++; continue; }
+          // Stop at next label-like item
+          if (next.endsWith(':') && next.length > 1) break;
+          if (KNOWN_LABELS.test(next) && k > j + 1) break;
+          valueParts.push(next);
+          k++;
+        }
+        if (valueParts.length > 0) {
+          addField(label, valueParts.join(' '));
+        }
+        j = k;
+        continue;
+      }
+      
+      // Check for known label patterns without ":"
+      if (KNOWN_LABELS.test(str) && j + 1 < items.length) {
+        const label = str;
+        const valueParts: string[] = [];
+        let k = j + 1;
+        while (k < items.length) {
+          const next = items[k].str.trim();
+          if (!next) { k++; continue; }
+          if (KNOWN_LABELS.test(next)) break;
+          // Stop at items too far away (likely different section)
+          valueParts.push(next);
+          k++;
+          // For single-value labels, just get the first value
+          if (valueParts.length >= 3) break;
+        }
+        if (valueParts.length > 0) {
+          addField(label, valueParts.join(' '));
+        }
+        j = k;
+        continue;
+      }
+      
+      j++;
+    }
+  }
+  
+  return fields;
 };
 
 // ======== Block extractors ========
@@ -160,8 +254,14 @@ const extractHeader = (lines: LayoutLine[]): {
 const extractEmployee = (lines: LayoutLine[]): {
   codigo: string; nome: string; cbo: string; departamento: string;
   filial: string; cargo: string; dataAdmissao: string;
+  endereco: string; bairro: string; cidade: string; cep: string; uf: string;
+  pis: string; cpf: string; identidade: string; dataCredito: string; depSalFam: string;
 } => {
-  const result = { codigo: '', nome: '', cbo: '', departamento: '', filial: '', cargo: '', dataAdmissao: '' };
+  const result = {
+    codigo: '', nome: '', cbo: '', departamento: '', filial: '',
+    cargo: '', dataAdmissao: '', endereco: '', bairro: '', cidade: '',
+    cep: '', uf: '', pis: '', cpf: '', identidade: '', dataCredito: '', depSalFam: '',
+  };
 
   // Find the table header line to know where employee zone ends
   let tableHeaderIdx = -1;
@@ -258,6 +358,110 @@ const extractEmployee = (lines: LayoutLine[]): {
       if (admMatch) result.dataAdmissao = admMatch[1];
     }
     
+    // Endereço
+    if (!result.endereco) {
+      const endMatch = text.match(/Endere[cç]o[:\s]*(.+?)(?:\s+CEP|\s+Bairro|\s*$)/i);
+      if (endMatch) result.endereco = endMatch[1].trim();
+      else {
+        for (let j = 0; j < items.length; j++) {
+          if (/^Endere[cç]o$/i.test(items[j].str.trim())) {
+            const parts: string[] = [];
+            for (let k = j + 1; k < items.length; k++) {
+              const val = items[k].str.trim();
+              if (!val) continue;
+              if (/^(CEP|Bairro|Cidade|UF)$/i.test(val)) break;
+              parts.push(val);
+            }
+            if (parts.length > 0) result.endereco = parts.join(' ').trim();
+            break;
+          }
+        }
+      }
+    }
+    
+    // Bairro
+    if (!result.bairro) {
+      for (let j = 0; j < items.length; j++) {
+        if (/^Bairro$/i.test(items[j].str.trim())) {
+          const parts: string[] = [];
+          for (let k = j + 1; k < items.length; k++) {
+            const val = items[k].str.trim();
+            if (!val) continue;
+            if (/^(Cidade|CEP|UF|Endere)$/i.test(val)) break;
+            parts.push(val);
+          }
+          if (parts.length > 0) result.bairro = parts.join(' ').trim();
+          break;
+        }
+      }
+    }
+    
+    // Cidade
+    if (!result.cidade) {
+      for (let j = 0; j < items.length; j++) {
+        if (/^Cidade$/i.test(items[j].str.trim())) {
+          const parts: string[] = [];
+          for (let k = j + 1; k < items.length; k++) {
+            const val = items[k].str.trim();
+            if (!val) continue;
+            if (/^(CEP|UF|Bairro|Endere|PIS|CPF)$/i.test(val)) break;
+            parts.push(val);
+          }
+          if (parts.length > 0) result.cidade = parts.join(' ').trim();
+          break;
+        }
+      }
+    }
+    
+    // CEP
+    if (!result.cep) {
+      const cepMatch = text.match(/CEP[:\s]*([\d.-]+)/i);
+      if (cepMatch) result.cep = cepMatch[1].trim();
+    }
+    
+    // UF
+    if (!result.uf) {
+      for (let j = 0; j < items.length; j++) {
+        if (/^UF$/i.test(items[j].str.trim()) && j + 1 < items.length) {
+          const val = items[j + 1].str.trim();
+          if (val && val.length <= 3 && /^[A-Z]{2}$/i.test(val)) {
+            result.uf = val.toUpperCase();
+          }
+          break;
+        }
+      }
+    }
+    
+    // PIS
+    if (!result.pis) {
+      const pisMatch = text.match(/PIS[:\s]*([\d./-]+)/i);
+      if (pisMatch) result.pis = pisMatch[1].trim();
+    }
+    
+    // CPF
+    if (!result.cpf) {
+      const cpfMatch = text.match(/CPF[:\s]*([\d./-]+)/i);
+      if (cpfMatch) result.cpf = cpfMatch[1].trim();
+    }
+    
+    // Identidade / RG
+    if (!result.identidade) {
+      const idMatch = text.match(/(?:Identidade|RG)[:\s]*([\d./-]+)/i);
+      if (idMatch) result.identidade = idMatch[1].trim();
+    }
+    
+    // Data Crédito
+    if (!result.dataCredito) {
+      const dcMatch = text.match(/Data\s*Cr[eé]dito[:\s]*(\d{2}\/\d{2}\/\d{4})/i);
+      if (dcMatch) result.dataCredito = dcMatch[1];
+    }
+    
+    // Dep.sal.fam / Dependentes salário família
+    if (!result.depSalFam) {
+      const depMatch = text.match(/Dep\.?\s*sal\.?\s*f[aá]m\.?[:\s]*(\d+)/i);
+      if (depMatch) result.depSalFam = depMatch[1];
+    }
+    
     // === Strategy 2: Positional (code + name + CBO on same line) ===
     if (!result.codigo || !result.nome) {
       // Skip header/label lines
@@ -347,7 +551,9 @@ const extractEvents = (lines: LayoutLine[]): {
   totalVencimentos: string;
   totalDescontos: string;
   valorLiquido: string;
-  period: string; // extracted from event rows (e.g. "8 / 2020" -> "08/2020")
+  period: string;
+  headerIdx: number;
+  endIdx: number;
 } => {
   const eventos: PayslipEvent[] = [];
   let totalVencimentos = '';
@@ -386,7 +592,7 @@ const extractEvents = (lines: LayoutLine[]): {
   }
   
   if (headerIdx < 0 || vencX === null || descX === null) {
-    return { eventos, totalVencimentos, totalDescontos, valorLiquido, period };
+    return { eventos, totalVencimentos, totalDescontos, valorLiquido, period, headerIdx: -1, endIdx: -1 };
   }
   
   // Process lines after the header until totals
@@ -529,7 +735,16 @@ const extractEvents = (lines: LayoutLine[]): {
     eventos.push({ codigo, descricao, referencia, vencimento, desconto });
   }
   
-  return { eventos, totalVencimentos, totalDescontos, valorLiquido, period };
+  // Find last event-related line index
+  let lastEventIdx = headerIdx;
+  for (let i = headerIdx + 1; i < lines.length; i++) {
+    const t = lines[i].text;
+    if (/Sal[aá]rio\s+(Base|Fixo)/i.test(t) || /Sal\.\s*Contr/i.test(t) || /Base\s+para\s+FGTS/i.test(t) || /Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(t) || /Local\s+do\s+Pagamento/i.test(t)) break;
+    if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber)/i.test(t)) { lastEventIdx = i; break; }
+    if (/Total\s+de\s+(Vencimentos|Proventos|Desconto)/i.test(t)) lastEventIdx = i;
+  }
+  
+  return { eventos, totalVencimentos, totalDescontos, valorLiquido, period, headerIdx, endIdx: lastEventIdx };
 };
 
 const extractFooter = (lines: LayoutLine[]): {
@@ -743,7 +958,7 @@ export const extractPattern1aPage = (items: TextItem[]): {
   
   const header = extractHeader(lines);
   const emp = extractEmployee(lines);
-  const { eventos, totalVencimentos, totalDescontos, valorLiquido, period: eventPeriod } = extractEvents(lines);
+  const { eventos, totalVencimentos, totalDescontos, valorLiquido, period: eventPeriod, headerIdx, endIdx } = extractEvents(lines);
   const footer = extractFooter(lines);
   const bank = extractBankInfo(lines);
   
@@ -751,8 +966,11 @@ export const extractPattern1aPage = (items: TextItem[]): {
   const period = header.period || eventPeriod;
   const competencia = header.competencia || period;
   
-  // Build legacy fields for backward compatibility
-  const fields = eventos.map(e => ({
+  // Dynamic fields: scan all non-event lines for label-value pairs
+  const dynamicFields = extractDynamicFields(lines, headerIdx, endIdx);
+  
+  // Build fields: start with events, then totals, then footer, then dynamic
+  const fields: ExtractedField[] = eventos.map(e => ({
     key: e.descricao,
     value: e.vencimento !== '0' ? e.vencimento : e.desconto,
   }));
@@ -760,6 +978,20 @@ export const extractPattern1aPage = (items: TextItem[]): {
   if (totalDescontos) fields.push({ key: 'Total de Descontos', value: totalDescontos });
   if (valorLiquido) fields.push({ key: 'Valor Líquido', value: valorLiquido });
   if (footer.salarioBase) fields.push({ key: 'Salário Base', value: footer.salarioBase });
+  if (footer.baseInss) fields.push({ key: 'Base INSS', value: footer.baseInss });
+  if (footer.baseFgts) fields.push({ key: 'Base FGTS', value: footer.baseFgts });
+  if (footer.fgtsMes) fields.push({ key: 'FGTS do Mês', value: footer.fgtsMes });
+  if (footer.baseIrrf) fields.push({ key: 'Base IRRF', value: footer.baseIrrf });
+  if (footer.irrf) fields.push({ key: 'IRRF', value: footer.irrf });
+  
+  // Merge dynamic fields (avoid duplicates)
+  const existingKeys = new Set(fields.map(f => f.key.toLowerCase()));
+  for (const df of dynamicFields) {
+    if (!existingKeys.has(df.key.toLowerCase())) {
+      fields.push(df);
+      existingKeys.add(df.key.toLowerCase());
+    }
+  }
   
   return {
     month: {
@@ -778,6 +1010,16 @@ export const extractPattern1aPage = (items: TextItem[]): {
       filial: emp.filial,
       cargo: emp.cargo,
       dataAdmissao: emp.dataAdmissao,
+      endereco: emp.endereco,
+      bairro: emp.bairro,
+      cidade: emp.cidade,
+      cep: emp.cep,
+      uf: emp.uf,
+      pis: emp.pis,
+      cpf: emp.cpf,
+      identidade: emp.identidade,
+      dataCredito: emp.dataCredito,
+      depSalFam: emp.depSalFam,
       eventos,
       totalVencimentos,
       totalDescontos,
