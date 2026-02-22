@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
-import { getDocuments, saveDocument, generateId, getStorageUsage } from '@/lib/storage';
+import { getDocuments, saveDocument, generateId, getStorageUsage, getTemplates } from '@/lib/storage';
 import { Document, DocumentFile } from '@/types';
 
 interface UploadModalProps {
@@ -37,6 +37,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
   const [selectedDocId, setSelectedDocId] = useState<string>('');
 
   const documents = getDocuments(userId);
+  const templates = getTemplates();
 
   useEffect(() => {
     if (!open) {
@@ -144,12 +145,15 @@ const UploadModal: React.FC<UploadModalProps> = ({
         }
       } else {
         // Create new document
+        const templatePrefix = 'template:';
+        const isTemplatePattern = payslipPattern.startsWith(templatePrefix);
         const newDoc: Document = {
           id: generateId(),
           userId,
           name: docName,
           description: docDescription,
-          payslipPattern: payslipPattern !== 'auto' ? payslipPattern : undefined,
+          payslipPattern: isTemplatePattern ? '1a' : (payslipPattern !== 'auto' ? payslipPattern : undefined),
+          templateId: isTemplatePattern ? payslipPattern.replace(templatePrefix, '') : undefined,
           files: docFiles,
           extractedData: null,
           status: 'pending',
@@ -279,6 +283,18 @@ const UploadModal: React.FC<UploadModalProps> = ({
                   <SelectContent>
                     <SelectItem value="auto">Auto-detectar</SelectItem>
                     <SelectItem value="1a">1a - Holerite Normal (Folha Mensal)</SelectItem>
+                    {templates.length > 0 && (
+                      <>
+                        <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">
+                          Modelos Salvos
+                        </div>
+                        {templates.map(t => (
+                          <SelectItem key={t.id} value={`template:${t.id}`}>
+                            📋 {t.name}
+                          </SelectItem>
+                        ))}
+                      </>
+                    )}
                   </SelectContent>
                 </Select>
                 <p className="text-xs text-muted-foreground">
