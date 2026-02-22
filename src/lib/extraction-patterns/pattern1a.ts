@@ -59,88 +59,7 @@ const findLabeledValue = (lines: LayoutLine[], labelRegex: RegExp, startIdx = 0,
   return '';
 };
 
-/**
- * Dynamically scan lines for ALL label-value pairs.
- * This captures fields regardless of their names.
- */
-const extractDynamicFields = (lines: LayoutLine[], eventsStartIdx: number, eventsEndIdx: number): ExtractedField[] => {
-  const fields: ExtractedField[] = [];
-  const seen = new Set<string>();
-  
-  const addField = (key: string, value: string) => {
-    const k = key.trim();
-    const v = value.trim();
-    if (!k || !v || k.length < 2) return;
-    // Skip pure numbers as keys or very short keys
-    if (/^\d+$/.test(k)) return;
-    const uid = `${k}::${v}`;
-    if (seen.has(uid)) return;
-    seen.add(uid);
-    fields.push({ key: k, value: v });
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    // Skip event table lines
-    if (i >= eventsStartIdx && i <= eventsEndIdx) continue;
-    
-    const items = lines[i].items;
-    
-    // Scan items looking for label-value patterns
-    let j = 0;
-    while (j < items.length) {
-      const item = items[j];
-      const str = item.str.trim();
-      
-      // Check if this looks like a label (ends with known pattern or is followed by a value)
-      // Labels ending with ":"
-      if (str.endsWith(':') && str.length > 1) {
-        const label = str.replace(/:$/, '').trim();
-        const valueParts: string[] = [];
-        let k = j + 1;
-        while (k < items.length) {
-          const next = items[k].str.trim();
-          if (!next) { k++; continue; }
-          // Stop at next label-like item
-          if (next.endsWith(':') && next.length > 1) break;
-          if (KNOWN_LABELS.test(next) && k > j + 1) break;
-          valueParts.push(next);
-          k++;
-        }
-        if (valueParts.length > 0) {
-          addField(label, valueParts.join(' '));
-        }
-        j = k;
-        continue;
-      }
-      
-      // Check for known label patterns without ":"
-      if (KNOWN_LABELS.test(str) && j + 1 < items.length) {
-        const label = str;
-        const valueParts: string[] = [];
-        let k = j + 1;
-        while (k < items.length) {
-          const next = items[k].str.trim();
-          if (!next) { k++; continue; }
-          if (KNOWN_LABELS.test(next)) break;
-          // Stop at items too far away (likely different section)
-          valueParts.push(next);
-          k++;
-          // For single-value labels, just get the first value
-          if (valueParts.length >= 3) break;
-        }
-        if (valueParts.length > 0) {
-          addField(label, valueParts.join(' '));
-        }
-        j = k;
-        continue;
-      }
-      
-      j++;
-    }
-  }
-  
-  return fields;
-};
+// (extractDynamicFields removed - replaced by extractAllFields below)
 
 /**
  * Find the X position of a label in a line's items, handling multi-word labels.
@@ -942,9 +861,73 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
 // ======== Universal label-value scanner ========
 
 /**
+ * Words that are purely structural column headers or decorative text.
+ * These should NEVER be treated as labels.
+ */
+const STRUCTURAL_WORDS = new Set([
+  'discriminação', 'discriminacao', 'das', 'parcelas', 'demonstrativo', 'de', 'pagamento', 'mensal',
+  'composição', 'composicao', 'do', 'salário', 'salario', 'mês', 'mes', 'ano', 'evento',
+  'ref', 'proventos', 'descontos', 'vencimentos', 'código', 'codigo', 'descrição', 'descricao',
+  'a', 'transportar', 'declaro', 'ter', 'recebido', 'importância', 'importancia', 'líquida', 'liquida',
+  'discriminada', 'neste', 'recibo', 'assinatura', 'funcionário', 'funcionario', 'data',
+]);
+
+const isStructuralLine = (text: string): boolean => {
+  if (/Documento\s+assinado/i.test(text)) return true;
+  if (/^Fls\.?:/i.test(text.trim())) return true;
+  if (/^https?:/i.test(text.trim())) return true;
+  if (/N[uú]mero\s+do\s+(processo|documento)/i.test(text)) return true;
+  if (/Declaro\s+ter\s+recebido/i.test(text)) return true;
+  if (/Assinatura\s+do\s+Funcion/i.test(text)) return true;
+  if (/____/i.test(text)) return true;
+  if (/^\*{3,}/.test(text.trim())) return true;
+  if (/^=>$/.test(text.trim())) return true;
+  return false;
+};
+
+/** Check if text is a formatted numeric value (e.g., "2.420,16", "0,00", "8,25") */
+const isFormattedNumber = (s: string): boolean => {
+  const t = s.trim();
+  if (!t) return false;
+  return /^\d[\d.,]*$/.test(t) && t.length >= 1;
+};
+
+/** Check if text is a date value */
+const isDateValue = (s: string): boolean => /^\d{2}\/\d{2}\/\d{4}$/.test(s.trim());
+
+/** Check if text looks like a data value (number, date, or short code) */
+const isDataValue = (s: string): boolean => {
+  const t = s.trim();
+  if (!t) return false;
+  if (isFormattedNumber(t)) return true;
+  if (isDateValue(t)) return true;
+  // CNPJ pattern
+  if (/^\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2}$/.test(t)) return true;
+  // CPF pattern
+  if (/^\d{3}\.\d{3}\.\d{3}-\d{2}$/.test(t)) return true;
+  // CEP pattern
+  if (/^\d{5}-?\d{3}$/.test(t)) return true;
+  return false;
+};
+
+/**
+ * Check if an item text is purely structural (column header word that should be skipped).
+ */
+const isStructuralWord = (s: string): boolean => {
+  const words = s.trim().toLowerCase().split(/\s+/);
+  // If ALL words are structural, it's structural
+  return words.length > 0 && words.every(w => STRUCTURAL_WORDS.has(w));
+};
+
+/**
  * Scan ALL lines (outside of the events table) and extract every
- * label → value pair found. This is the primary extraction method
- * for header, employee, footer, and bank data.
+ * label → value pair found. This is completely generic and does not
+ * rely on a predefined list of labels.
+ * 
+ * Strategy:
+ * 1. Colon-separated pairs: "Label: Value"
+ * 2. Text → Number pairs: accumulate text items, emit when a numeric value follows
+ * 3. Known label → text value pairs (for non-numeric values like names)
  */
 const extractAllFields = (
   lines: LayoutLine[],
@@ -955,81 +938,52 @@ const extractAllFields = (
   const seen = new Set<string>();
 
   const add = (key: string, value: string) => {
-    const k = key.trim();
-    const v = value.trim();
+    let k = key.trim();
+    let v = value.trim();
     if (!k || !v || k.length < 2) return;
-    if (/^\d+$/.test(k)) return;
-    // Skip purely structural / decorative text
-    if (/^(Discrimina[cç][aã]o\s+das\s+parcelas|Demonstrativo\s+de\s+Pagamento|=>)$/i.test(k)) return;
-    if (/^(Fls|Documento\s+assinado|https?:)/i.test(k)) return;
-    const uid = `${k}::${v}`;
+    // Skip pure numbers as keys
+    if (/^[\d.,]+$/.test(k)) return;
+    // Skip structural/decorative text
+    if (isStructuralWord(k)) return;
+    if (/^(=>|A\s+TRANSPORTAR|Fls|____)/i.test(k)) return;
+    // Clean up trailing colons/special chars from key
+    k = k.replace(/[:=]+$/, '').trim();
+    if (!k) return;
+    const uid = `${k.toLowerCase()}::${v}`;
     if (seen.has(uid)) return;
     seen.add(uid);
     fields.push({ key: k, value: v });
   };
 
-  /** Labels that indicate the next item(s) are values */
-  const LABEL_PATTERNS = [
-    /^Empresa$/i, /^CNPJ$/i, /^Nome$/i, /^Matr[ií]cula$/i, /^Mat\.?$/i,
-    /^Fun[cç][aã]o$/i, /^Cargo$/i, /^Bairro$/i, /^Cidade$/i, /^CEP$/i, /^UF$/i,
-    /^Endere[cç]o$/i, /^PIS$/i, /^CPF$/i, /^Identidade$/i, /^RG$/i,
-    /^Data\s*Cr[eé]dito$/i, /^Data\s*Admiss[aã]o$/i, /^Dep\.?\s*sal/i,
-    /^Banco$/i, /^Ag[eê]ncia$/i, /^(C\/C|Conta\s*Corrente?)$/i,
-    /^Centro\s+(de\s+)?Custo$/i, /^Compet[eê]ncia$/i, /^Registro$/i,
-    /^Sal[aá]rio\s+(Base|Fixo)$/i, /^Sal\.?\s*Cont?r?\.?\s*INSS$/i,
-    /^Base\s+(?:para\s+)?FGTS$/i, /^FGTS\s+do\s+m[eê]s$/i,
-    /^Base\s+(?:C[aá]l\.?\s*)?IRRF$/i, /^Base\s+(?:para\s+)?INSS$/i,
-    /^Pens[aã]o\s+Alim/i,
-    /^Total\s+de\s+(Vencimentos|Proventos)$/i, /^Total\s+de\s+Desconto(s)?$/i,
-    /^L[ií]quido\s+a\s+Receber$/i, /^Valor\s+L[ií]quido$/i,
-    /^IR$/i, /^Local\s+do\s+Pagamento$/i,
-    /^Folha$/i, /^Tipo\s+Folha$/i,
-    /^CBO$/i, /^Departamento$/i, /^Filial$/i, /^Se[cç][aã]o$/i,
-    /^Admiss[aã]o$/i,
+  /** Known labels that can have TEXT values (not just numbers) */
+  const TEXT_VALUE_LABELS = [
+    /^Empresa$/i, /^Nome$/i, /^Nome\s+do\s+Funcion[aá]rio$/i,
+    /^Matr[ií]cula$/i, /^Mat\.?$/i, /^Registro$/i,
+    /^Fun[cç][aã]o$/i, /^Cargo$/i, /^Bairro$/i, /^Cidade$/i, /^UF$/i,
+    /^Endere[cç]o$/i, /^Departamento$/i, /^Se[cç][aã]o$/i,
+    /^Local\s+do\s+Pagamento$/i, /^Folha$/i, /^Tipo\s+Folha$/i, /^Filial$/i,
+    /^Banco$/i, /^CC$/i, /^Centro\s+(?:de\s+)?Custo$/i,
   ];
 
-  /** Words that are purely structural headers (not label-value) */
-  const STRUCTURAL = /^(Discrimina[cç][aã]o\s+das\s+parcelas|Demonstrativo\s+de\s+Pagamento\s+Mensal|Composi[cç][aã]o\s+do\s+Sal[aá]rio|M[eê]s\s*\/\s*Ano|Evento|Discrimina[cç][aã]o|Ref|Proventos|Descontos|Vencimentos|C[oó]digo|Descri[cç][aã]o)$/i;
-
-  const isLabel = (s: string): boolean => {
+  const isTextValueLabel = (s: string): boolean => {
     const t = s.trim();
-    if (STRUCTURAL.test(t)) return false;
-    return LABEL_PATTERNS.some(p => p.test(t));
-  };
-
-  /** Check if two consecutive items form a multi-word label */
-  const tryMultiWordLabel = (items: TextItem[], startIdx: number): { label: string; endIdx: number } | null => {
-    if (startIdx + 1 >= items.length) return null;
-    const first = items[startIdx].str.trim();
-    const second = items[startIdx + 1].str.trim();
-    const combined = `${first} ${second}`;
-    // Also try with 3rd word
-    let combined3 = combined;
-    if (startIdx + 2 < items.length) {
-      combined3 = `${combined} ${items[startIdx + 2].str.trim()}`;
-    }
-    for (const p of LABEL_PATTERNS) {
-      if (p.test(combined3) && startIdx + 2 < items.length) return { label: combined3, endIdx: startIdx + 2 };
-      if (p.test(combined)) return { label: combined, endIdx: startIdx + 1 };
-    }
-    return null;
+    return TEXT_VALUE_LABELS.some(p => p.test(t));
   };
 
   for (let i = 0; i < lines.length; i++) {
     // Skip event table lines
     if (eventsStartIdx >= 0 && i >= eventsStartIdx && i <= eventsEndIdx) continue;
-    // Skip signature / page footer lines
-    if (/Documento\s+assinado/i.test(lines[i].text)) continue;
-    if (/^Fls\.?:/i.test(lines[i].text.trim())) continue;
-    if (/^https?:/i.test(lines[i].text.trim())) continue;
-    if (/N[uú]mero\s+do\s+(processo|documento)/i.test(lines[i].text)) continue;
+    // Skip structural lines
+    if (isStructuralLine(lines[i].text)) continue;
 
     const items = lines[i].items;
+    
+    // ---- Phase 1: Colon-separated pairs ----
+    // Process "Label: Value" patterns first (high confidence)
     let j = 0;
     while (j < items.length) {
       const str = items[j].str.trim();
 
-      // Try colon-separated: "Label: Value"
       if (str.endsWith(':') && str.length > 1) {
         const label = str.replace(/:$/, '').trim();
         const valParts: string[] = [];
@@ -1037,60 +991,114 @@ const extractAllFields = (
         while (k < items.length) {
           const next = items[k].str.trim();
           if (!next) { k++; continue; }
+          // Stop at next colon-label
           if (next.endsWith(':') && next.length > 1) break;
-          if (isLabel(next)) break;
           valParts.push(next);
           k++;
+          // For most labels, 3-4 value parts is enough
+          if (valParts.length >= 5) break;
         }
         if (valParts.length > 0) add(label, valParts.join(' '));
         j = k;
         continue;
       }
-
-      // Try multi-word label first
-      const multi = tryMultiWordLabel(items, j);
-      if (multi) {
-        const valParts: string[] = [];
-        let k = multi.endIdx + 1;
-        while (k < items.length) {
-          const next = items[k].str.trim();
-          if (!next) { k++; continue; }
-          if (isLabel(next)) break;
-          if (tryMultiWordLabel(items, k)) break;
-          if (next.endsWith(':') && next.length > 1) break;
-          valParts.push(next);
-          k++;
-          if (valParts.length >= 5) break;
-        }
-        if (valParts.length > 0) add(multi.label, valParts.join(' '));
-        j = k;
-        continue;
-      }
-
-      // Try single-word label
-      if (isLabel(str)) {
-        const valParts: string[] = [];
-        let k = j + 1;
-        while (k < items.length) {
-          const next = items[k].str.trim();
-          if (!next) { k++; continue; }
-          if (isLabel(next)) break;
-          if (tryMultiWordLabel(items, k)) break;
-          if (next.endsWith(':') && next.length > 1) break;
-          valParts.push(next);
-          k++;
-          if (valParts.length >= 5) break;
-        }
-        if (valParts.length > 0) add(str, valParts.join(' '));
-        j = k;
-        continue;
-      }
-
       j++;
+    }
+
+    // ---- Phase 2: Text → Number/Date value pairs (generic) ----
+    // Accumulate non-numeric text items; when a number/date follows, treat text as label
+    let labelAccum: string[] = [];
+    let labelStartJ = 0;
+    
+    for (let jj = 0; jj < items.length; jj++) {
+      const str = items[jj].str.trim();
+      if (!str) continue;
+      
+      // Skip items already captured by colon phase
+      if (str.endsWith(':') && str.length > 1) {
+        labelAccum = [];
+        // Skip to after the colon-value pair
+        let skip = jj + 1;
+        while (skip < items.length) {
+          const next = items[skip].str.trim();
+          if (!next) { skip++; continue; }
+          if (next.endsWith(':') && next.length > 1) break;
+          if (isDataValue(next)) { skip++; break; }
+          skip++;
+          break;
+        }
+        jj = skip - 1;
+        continue;
+      }
+      
+      if (isDataValue(str)) {
+        // We hit a value - if we accumulated label text, pair them
+        if (labelAccum.length > 0) {
+          const label = labelAccum.join(' ');
+          if (!isStructuralWord(label) && label.length >= 2) {
+            add(label, str);
+          }
+        }
+        labelAccum = [];
+      } else {
+        // Text item - accumulate as potential label
+        if (labelAccum.length === 0) labelStartJ = jj;
+        // Don't accumulate too many words (likely not a single label)
+        if (labelAccum.length >= 6) {
+          labelAccum = [str];
+          labelStartJ = jj;
+        } else {
+          labelAccum.push(str);
+        }
+      }
+    }
+    
+    // ---- Phase 3: Known text-value labels ----
+    // For labels whose values are text (not numbers), use known patterns
+    for (let jj = 0; jj < items.length; jj++) {
+      const str = items[jj].str.trim();
+      
+      // Try multi-word text-value label (e.g., "Nome do Funcionário")
+      let matchedLabel = '';
+      let labelEndIdx = jj;
+      
+      if (isTextValueLabel(str)) {
+        matchedLabel = str;
+        labelEndIdx = jj;
+      } else {
+        // Try 2-3 word combinations
+        for (let len = 2; len <= Math.min(4, items.length - jj); len++) {
+          const combined = items.slice(jj, jj + len).map(it => it.str.trim()).filter(Boolean).join(' ');
+          if (isTextValueLabel(combined)) {
+            matchedLabel = combined;
+            labelEndIdx = jj + len - 1;
+            break;
+          }
+        }
+      }
+      
+      if (matchedLabel) {
+        const valParts: string[] = [];
+        let k = labelEndIdx + 1;
+        while (k < items.length) {
+          const next = items[k].str.trim();
+          if (!next) { k++; continue; }
+          // Stop at structural words or other known labels
+          if (isTextValueLabel(next)) break;
+          if (next.endsWith(':') && next.length > 1) break;
+          // Stop at labels that commonly follow (CBO, Departamento, etc.)
+          if (/^(CBO|Departamento|Filial|Matr|Admiss|Data|Cargo|Fun[cç]|Endere|Bairro|Cidade|CEP|UF|PIS|CPF|CNPJ|Empresa|Banco|Ag[eê]ncia|C\/C|Conta|Sal[aá]rio|Base|Total|L[ií]quido|Folha|Ref|Proventos|Descontos|Vencimentos|Evento|Discrimina|M[eê]s|IR$)/i.test(next)) break;
+          valParts.push(next);
+          k++;
+          if (valParts.length >= 5) break;
+        }
+        if (valParts.length > 0) {
+          add(matchedLabel, valParts.join(' '));
+        }
+      }
     }
   }
 
-  // Also extract period from events if not found
   return fields;
 };
 
@@ -1106,10 +1114,10 @@ export const extractPattern1aPage = (items: TextItem[]): {
   // Extract events (structured table)
   const { eventos, totalVencimentos, totalDescontos, valorLiquido, period: eventPeriod, headerIdx, endIdx } = extractEvents(lines);
 
-  // Extract ALL label-value pairs dynamically
+  // Extract ALL label-value pairs dynamically (truly generic)
   const dynamicFields = extractAllFields(lines, headerIdx, endIdx);
 
-  // Add totals as fields too
+  // Add totals as fields if not already captured
   const fields: ExtractedField[] = [...dynamicFields];
   const existingKeys = new Set(fields.map(f => f.key.toLowerCase()));
   const addIfNew = (key: string, value: string) => {
@@ -1122,21 +1130,16 @@ export const extractPattern1aPage = (items: TextItem[]): {
   addIfNew('Total de Descontos', totalDescontos);
   addIfNew('Valor Líquido', valorLiquido);
 
-  // Also add event summaries as fields for export
-  for (const e of eventos) {
-    addIfNew(e.descricao, e.vencimento !== '0' ? e.vencimento : `-${e.desconto}`);
-  }
-
-  // Extract key identifiers from fields for backward compat
+  // Helper to find a field by regex
   const findField = (regex: RegExp): string => {
     const f = fields.find(f => regex.test(f.key));
     return f?.value || '';
   };
 
-  const empresa = findField(/^Empresa$/i);
-  const cnpj = findField(/^CNPJ$/i);
-  const nome = findField(/^(Nome|Matr[ií]cula)$/i);
-  const competencia = findField(/^Compet[eê]ncia$/i);
+  const empresa = findField(/Empresa/i);
+  const cnpj = findField(/CNPJ/i);
+  const nome = findField(/Nome/i);
+  const competencia = findField(/Compet[eê]ncia/i) || findField(/Folha/i);
   const period = eventPeriod || competencia;
 
   return {
@@ -1146,16 +1149,16 @@ export const extractPattern1aPage = (items: TextItem[]): {
       empresa,
       cnpj,
       competencia: competencia || period,
-      nomeFuncionario: findField(/^Nome$/i),
-      codigoFuncionario: findField(/^Matr[ií]cula$/i),
-      cargo: findField(/^(Fun[cç][aã]o|Cargo)$/i),
-      dataAdmissao: findField(/^(Data\s*Admiss[aã]o|Admiss[aã]o)$/i),
+      nomeFuncionario: nome,
+      codigoFuncionario: findField(/Matr[ií]cula|C[oó]digo|Registro/i),
+      cargo: findField(/Fun[cç][aã]o|Cargo/i),
+      dataAdmissao: findField(/Admiss[aã]o/i),
       eventos,
       totalVencimentos,
       totalDescontos,
       valorLiquido,
     },
-    employeeName: findField(/^Nome$/i),
+    employeeName: nome,
     cnpj,
   };
 };
