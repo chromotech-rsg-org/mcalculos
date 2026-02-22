@@ -164,6 +164,15 @@ const DocumentDetail: React.FC = () => {
         [editingCell.subField]: editValue,
       };
       month.eventos = eventos;
+    } else if (editingCell.field.startsWith('fields.')) {
+      // Dynamic field edit: fields.{index}.value
+      const parts = editingCell.field.split('.');
+      const fieldIdx = parseInt(parts[1], 10);
+      if (month.fields && month.fields[fieldIdx]) {
+        const updatedFields = [...month.fields];
+        updatedFields[fieldIdx] = { ...updatedFields[fieldIdx], value: editValue };
+        month.fields = updatedFields;
+      }
     } else {
       (month as any)[editingCell.field] = editValue;
     }
@@ -497,103 +506,25 @@ const DocumentDetail: React.FC = () => {
                           </Button>
                         </div>
 
-                        {/* Header info */}
-                        <div className="grid grid-cols-2 gap-2 text-sm">
-                          {[
-                            { label: 'Empresa', field: 'empresa' },
-                            { label: 'CNPJ', field: 'cnpj' },
-                            { label: 'Centro de Custo', field: 'centroCusto' },
-                            { label: 'Tipo de Folha', field: 'tipoFolha' },
-                            { label: 'Cód. Funcionário', field: 'codigoFuncionario' },
-                            { label: 'Nome Funcionário', field: 'nomeFuncionario' },
-                            { label: 'CBO', field: 'cbo' },
-                            { label: 'Departamento', field: 'departamento' },
-                            { label: 'Filial', field: 'filial' },
-                            { label: 'Cargo', field: 'cargo' },
-                            { label: 'Data Admissão', field: 'dataAdmissao' },
-                            { label: 'Endereço', field: 'endereco' },
-                            { label: 'Bairro', field: 'bairro' },
-                            { label: 'Cidade', field: 'cidade' },
-                            { label: 'CEP', field: 'cep' },
-                            { label: 'UF', field: 'uf' },
-                            { label: 'PIS', field: 'pis' },
-                            { label: 'CPF', field: 'cpf' },
-                            { label: 'Identidade', field: 'identidade' },
-                            { label: 'Data Crédito', field: 'dataCredito' },
-                            { label: 'Dep. Sal. Fam.', field: 'depSalFam' },
-                          ].filter(({ field }) => (month as any)[field]).map(({ label, field }) => (
-                            <div key={field}>
-                              <p className="text-muted-foreground text-xs">{label}</p>
-                              <div className="font-medium text-xs">
-                                {renderEditableCell((month as any)[field] || '', monthIndex, field)}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
-                        {/* Events table */}
-                        {month.eventos && month.eventos.length > 0 && (
-                          <div className="rounded-lg border overflow-auto">
-                            <Table>
-                              <TableHeader>
-                                <TableRow>
-                                  <TableHead className="text-xs">Código</TableHead>
-                                  <TableHead className="text-xs">Descrição</TableHead>
-                                  <TableHead className="text-xs">Ref.</TableHead>
-                                  <TableHead className="text-xs">Vencimento</TableHead>
-                                  <TableHead className="text-xs">Desconto</TableHead>
-                                </TableRow>
-                              </TableHeader>
-                              <TableBody>
-                                {month.eventos.map((ev, evIdx) => (
-                                  <TableRow key={evIdx}>
-                                    <TableCell className="text-xs py-1">
-                                      {renderEditableCell(ev.codigo, monthIndex, 'eventos', 'codigo', evIdx)}
-                                    </TableCell>
-                                    <TableCell className="text-xs py-1">
-                                      {renderEditableCell(ev.descricao, monthIndex, 'eventos', 'descricao', evIdx)}
-                                    </TableCell>
-                                    <TableCell className="text-xs py-1">
-                                      {renderEditableCell(ev.referencia, monthIndex, 'eventos', 'referencia', evIdx)}
-                                    </TableCell>
-                                    <TableCell className="text-xs py-1">
-                                      {renderEditableCell(ev.vencimento, monthIndex, 'eventos', 'vencimento', evIdx)}
-                                    </TableCell>
-                                    <TableCell className="text-xs py-1">
-                                      {renderEditableCell(ev.desconto, monthIndex, 'eventos', 'desconto', evIdx)}
-                                    </TableCell>
-                                  </TableRow>
-                                ))}
-                              </TableBody>
-                            </Table>
+                        {/* Header info - Dynamic fields */}
+                        {month.fields && month.fields.length > 0 && (
+                          <div className="grid grid-cols-2 gap-2 text-sm">
+                            {month.fields
+                              .filter(f => {
+                                // Skip fields that are shown in the events table or totals section
+                                if (month.eventos?.some(e => e.descricao === f.key)) return false;
+                                return true;
+                              })
+                              .map((field, fieldIdx) => (
+                                <div key={`${field.key}-${fieldIdx}`}>
+                                  <p className="text-muted-foreground text-xs">{field.key}</p>
+                                  <div className="font-medium text-xs">
+                                    {renderEditableCell(field.value, monthIndex, `fields.${fieldIdx}.value`)}
+                                  </div>
+                                </div>
+                              ))}
                           </div>
                         )}
-
-                        {/* Footer totals */}
-                        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm p-3 rounded-lg bg-muted/50">
-                          {[
-                            { label: 'Salário Base', field: 'salarioBase' },
-                            { label: 'Total Vencimentos', field: 'totalVencimentos' },
-                            { label: 'Total Descontos', field: 'totalDescontos' },
-                            { label: 'Valor Líquido', field: 'valorLiquido' },
-                            { label: 'Base INSS', field: 'baseInss' },
-                            { label: 'Base FGTS', field: 'baseFgts' },
-                            { label: 'FGTS do Mês', field: 'fgtsMes' },
-                            { label: 'Base IRRF', field: 'baseIrrf' },
-                            { label: 'IRRF', field: 'irrf' },
-                            { label: 'Banco', field: 'banco' },
-                            { label: 'Agência', field: 'agencia' },
-                            { label: 'Conta Corrente', field: 'contaCorrente' },
-                          ].filter(({ field }) => (month as any)[field]).map(({ label, field }) => (
-                            <div key={field}>
-                              <p className="text-muted-foreground text-xs">{label}</p>
-                              <div className="font-medium text-xs">
-                                {renderEditableCell((month as any)[field] || '', monthIndex, field)}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-
                         {monthIndex < (doc.extractedData?.months.length || 0) - 1 && (
                           <hr className="border-border" />
                         )}
