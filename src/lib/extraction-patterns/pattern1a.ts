@@ -142,6 +142,56 @@ const extractDynamicFields = (lines: LayoutLine[], eventsStartIdx: number, event
   return fields;
 };
 
+/**
+ * Find the X position of a label in a line's items, handling multi-word labels.
+ * For combined items, only matches when the regex matches at the START of the combination.
+ */
+const findLabelXInItems = (items: TextItem[], labelRegex: RegExp): number => {
+  // Strategy 1: single item match
+  for (const it of items) {
+    if (labelRegex.test(it.str.trim())) return it.x;
+  }
+  // Strategy 2: combined consecutive items (match must start near index 0)
+  for (let j = 0; j < items.length; j++) {
+    for (let len = 2; len <= Math.min(5, items.length - j); len++) {
+      const combined = items.slice(j, j + len).map(it => it.str).join(' ');
+      const match = combined.match(labelRegex);
+      if (match && match.index !== undefined && match.index <= 2) {
+        return items[j].x;
+      }
+    }
+  }
+  return -1;
+};
+
+/**
+ * Get value aligned with a label by X position (same line after label, or next line closest by X).
+ */
+const getAlignedValue = (lines: LayoutLine[], lineIdx: number, labelRegex: RegExp): string => {
+  const items = lines[lineIdx].items;
+  const labelX = findLabelXInItems(items, labelRegex);
+  if (labelX < 0) return '';
+
+  // Same line: value right after label
+  const sameLineVals = items
+    .filter(it => it.x > labelX + 20 && /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+    .sort((a, b) => a.x - b.x);
+  if (sameLineVals.length > 0 && sameLineVals[0].x - labelX < 150) {
+    return sameLineVals[0].str.trim();
+  }
+
+  // Next line: closest value by X
+  if (lineIdx + 1 < lines.length) {
+    const nextVals = lines[lineIdx + 1].items
+      .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().length > 1)
+      .sort((a, b) => Math.abs(a.x - labelX) - Math.abs(b.x - labelX));
+    if (nextVals.length > 0 && Math.abs(nextVals[0].x - labelX) < 200) {
+      return nextVals[0].str.trim();
+    }
+  }
+  return '';
+};
+
 // ======== Block extractors ========
 
 const extractHeader = (lines: LayoutLine[]): {
@@ -600,58 +650,26 @@ const extractEvents = (lines: LayoutLine[]): {
     const line = lines[i];
     const text = line.text;
     
-    // ---- Totals detection (flexible labels) ----
+    // ---- Totals detection (position-aware) ----
     
     // Total de Vencimentos / Total de Proventos
-    if (/Total\s+de\s+(Vencimentos|Proventos)/i.test(text)) {
-      const vals = line.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (vals.length > 0) {
-        for (const v of vals) {
-          const col = classifyValueColumn(v.x + v.width / 2, vencX!, descX!);
-          if (col === 'vencimento') totalVencimentos = v.str.trim();
-          else totalDescontos = v.str.trim();
-        }
-      } else {
-        const nextLine = i + 1 < lines.length ? lines[i + 1] : null;
-        if (nextLine && !/Total|Valor|Sal[aá]rio|L[ií]quido/i.test(nextLine.text)) {
-          const nextVals = nextLine.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-          for (const v of nextVals) {
-            const col = classifyValueColumn(v.x + v.width / 2, vencX!, descX!);
-            if (col === 'vencimento') totalVencimentos = v.str.trim();
-            else totalDescontos = v.str.trim();
-          }
-        }
-      }
+    if (/Total\s+de\s+(Vencimentos|Proventos)/i.test(text) && !totalVencimentos) {
+      const v = getAlignedValue(lines, i, /Total\s+de\s+(Vencimentos|Proventos)/i);
+      if (v) totalVencimentos = v;
       continue;
     }
     
     // Total de Descontos / Total de Desconto
-    if (/Total\s+de\s+Desconto/i.test(text)) {
-      const vals = line.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (vals.length > 0) {
-        for (const v of vals) totalDescontos = v.str.trim();
-      } else {
-        const nextLine = i + 1 < lines.length ? lines[i + 1] : null;
-        if (nextLine && !/Total|Valor|Sal[aá]rio|L[ií]quido/i.test(nextLine.text)) {
-          const nextVals = nextLine.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-          if (nextVals.length > 0) totalDescontos = nextVals[nextVals.length - 1].str.trim();
-        }
-      }
+    if (/Total\s+de\s+Desconto/i.test(text) && !totalDescontos) {
+      const v = getAlignedValue(lines, i, /Total\s+de\s+Desconto/i);
+      if (v) totalDescontos = v;
       continue;
     }
     
     // Valor Líquido / Líquido a Receber (with optional => arrow)
-    if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber)/i.test(text)) {
-      const vals = line.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (vals.length > 0) {
-        valorLiquido = vals[vals.length - 1].str.trim();
-      } else {
-        const nextLine = i + 1 < lines.length ? lines[i + 1] : null;
-        if (nextLine) {
-          const nextVals = nextLine.items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-          if (nextVals.length > 0) valorLiquido = nextVals[nextVals.length - 1].str.trim();
-        }
-      }
+    if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber)/i.test(text) && !valorLiquido) {
+      const v = getAlignedValue(lines, i, /L[ií]quido/i);
+      if (v) valorLiquido = v;
       continue;
     }
     
@@ -662,15 +680,6 @@ const extractEvents = (lines: LayoutLine[]): {
     if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text)) break;
     if (/Local\s+do\s+Pagamento/i.test(text)) break;
     
-    // Parse event line: starts with 3-4 digit code
-    const codeItem = line.items.find(it => /^\d{3,4}$/.test(it.str.trim()));
-    if (!codeItem) {
-      // Some layouts have "Mês/Ano" before the event code (e.g. "8 / 2020  0514  DESC...")
-      // Try to find code after a date-like pattern
-      const altCodeItem = line.items.find(it => /^\d{4}$/.test(it.str.trim()));
-      if (!altCodeItem) continue;
-    }
-    
     // Try to extract period from "Mês/Ano" column (e.g. "8 / 2020")
     if (!period) {
       const periodMatch = text.match(/(\d{1,2})\s*\/\s*(\d{4})/);
@@ -680,8 +689,20 @@ const extractEvents = (lines: LayoutLine[]): {
       }
     }
     
-    // Find the actual event code
-    const eventCodeItem = codeItem || line.items.find(it => /^\d{3,4}$/.test(it.str.trim()));
+    // Find event code - skip date components (year preceded by "/" from Mês/Ano column)
+    let eventCodeItem: TextItem | undefined;
+    for (let j = 0; j < line.items.length; j++) {
+      const it = line.items[j];
+      if (!/^\d{3,4}$/.test(it.str.trim())) continue;
+      // Skip if preceded by "/" within previous 2 items (it's a year)
+      let isYear = false;
+      for (let k = j - 1; k >= Math.max(0, j - 2); k--) {
+        if (line.items[k].str.trim() === '/') { isYear = true; break; }
+      }
+      if (isYear) continue;
+      eventCodeItem = it;
+      break;
+    }
     if (!eventCodeItem) continue;
     
     const codigo = eventCodeItem.str.trim();
@@ -753,87 +774,58 @@ const extractFooter = (lines: LayoutLine[]): {
 } => {
   const result = { salarioBase: '', baseInss: '', baseFgts: '', fgtsMes: '', baseIrrf: '', irrf: '' };
   
-  // Scan all lines for footer values using flexible label matching
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i].text;
-    const items = lines[i].items;
     
-    // Helper: get numeric values from this line or the next
-    const getValues = (lineIdx: number): TextItem[] => {
-      const vals = lines[lineIdx].items
+    // Style A: all labels on one compact line (e.g., "Salário Base  Sal.Contr.  Base FGTS  FGTS Mês  Base IRRF  IRRF")
+    if (/Sal[aá]rio\s+Base/i.test(text) && /Sal\.\s*Contr/i.test(text)) {
+      const values = lines[i].items
         .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
         .sort((a, b) => a.x - b.x);
-      if (vals.length > 0) return vals;
-      
-      // Try next line
-      if (lineIdx + 1 < lines.length) {
-        return lines[lineIdx + 1].items
+      const vals = values.length > 0 ? values : (
+        i + 1 < lines.length ? lines[i + 1].items
           .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
-          .sort((a, b) => a.x - b.x);
-      }
-      return [];
-    };
-    
-    // Style A: "Salário Base" + "Base INSS" + "Base FGTS" all on one label line
-    if (/Sal[aá]rio\s+Base/i.test(text) && /Sal\.\s*Contr/i.test(text)) {
-      const values = getValues(i);
-      if (values.length >= 1) result.salarioBase = values[0].str.trim();
-      if (values.length >= 2) result.baseInss = values[1].str.trim();
-      if (values.length >= 3) result.baseFgts = values[2].str.trim();
-      if (values.length >= 4) result.fgtsMes = values[3].str.trim();
-      if (values.length >= 5) result.baseIrrf = values[4].str.trim();
-      if (values.length >= 6) result.irrf = values[5].str.trim();
+          .sort((a, b) => a.x - b.x) : []
+      );
+      if (vals.length >= 1) result.salarioBase = vals[0].str.trim();
+      if (vals.length >= 2) result.baseInss = vals[1].str.trim();
+      if (vals.length >= 3) result.baseFgts = vals[2].str.trim();
+      if (vals.length >= 4) result.fgtsMes = vals[3].str.trim();
+      if (vals.length >= 5) result.baseIrrf = vals[4].str.trim();
+      if (vals.length >= 6) result.irrf = vals[5].str.trim();
       break;
     }
     
-    // Style B: Individual labeled fields (one per line or per section)
-    // Helper: get first numeric value with comma from line or next line
-    const getFirstVal = (idx: number): string => {
-      const v = lines[idx].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-      if (v.length > 0) return v[0].str.trim();
-      if (idx + 1 < lines.length) {
-        const nv = lines[idx + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-        if (nv.length > 0) return nv[0].str.trim();
-      }
-      return '';
-    };
-
+    // Style B: individual/grouped labels with positional value matching
     if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !result.salarioBase) {
-      const v = getFirstVal(i);
-      if (v) result.salarioBase = v;
+      result.salarioBase = getAlignedValue(lines, i, /Sal[aá]rio/i);
     }
-    // "Composição do Salário" line with "Salário Fixo" value on same or next line
     if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text) && !result.salarioBase) {
-      // Look at next lines for "Salário Fixo" or just a numeric value
       for (let k = i + 1; k < Math.min(i + 3, lines.length); k++) {
         if (/Sal[aá]rio\s+Fixo/i.test(lines[k].text)) {
-          const v = lines[k].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
-          if (v.length > 0) { result.salarioBase = v[0].str.trim(); break; }
+          result.salarioBase = getAlignedValue(lines, k, /Sal[aá]rio/i);
+          break;
         }
       }
     }
     if (/Base\s+(?:para\s+)?FGTS/i.test(text) && !result.baseFgts) {
-      const v = getFirstVal(i);
-      if (v) result.baseFgts = v;
+      result.baseFgts = getAlignedValue(lines, i, /^Base/i);
     }
     if (/FGTS\s+do\s+m[eê]s/i.test(text) && !result.fgtsMes) {
-      const v = getFirstVal(i);
-      if (v) result.fgtsMes = v;
+      result.fgtsMes = getAlignedValue(lines, i, /FGTS\s+do/i);
     }
     if (/Base\s+(Cal\.?\s*)?IRRF/i.test(text) && !result.baseIrrf) {
-      const v = getFirstVal(i);
-      if (v) result.baseIrrf = v;
-    }
-    if (/Pens[aã]o\s+Alim/i.test(text) && !result.baseIrrf) {
-      // Sometimes "Pensão Alim. Extra Folha" line contains IRRF base nearby
+      result.baseIrrf = getAlignedValue(lines, i, /Base.*IRRF/i);
+      // Fallback: first "Base" on a line that specifically has IRRF
+      if (!result.baseIrrf) {
+        result.baseIrrf = getAlignedValue(lines, i, /^Base/i);
+      }
     }
     if (/Sal\.?\s*Cont?\.?\s*INSS/i.test(text) && !result.baseInss) {
-      const v = getFirstVal(i);
-      if (v) result.baseInss = v;
+      result.baseInss = getAlignedValue(lines, i, /^Sal/i);
     }
     if (/Base\s+INSS/i.test(text) && !result.baseInss) {
-      const v = getFirstVal(i);
-      if (v) result.baseInss = v;
+      result.baseInss = getAlignedValue(lines, i, /Base.*INSS/i);
     }
   }
   
