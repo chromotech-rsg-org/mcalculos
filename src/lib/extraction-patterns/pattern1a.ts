@@ -939,6 +939,161 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
   return result;
 };
 
+// ======== Universal label-value scanner ========
+
+/**
+ * Scan ALL lines (outside of the events table) and extract every
+ * label → value pair found. This is the primary extraction method
+ * for header, employee, footer, and bank data.
+ */
+const extractAllFields = (
+  lines: LayoutLine[],
+  eventsStartIdx: number,
+  eventsEndIdx: number,
+): ExtractedField[] => {
+  const fields: ExtractedField[] = [];
+  const seen = new Set<string>();
+
+  const add = (key: string, value: string) => {
+    const k = key.trim();
+    const v = value.trim();
+    if (!k || !v || k.length < 2) return;
+    if (/^\d+$/.test(k)) return;
+    // Skip purely structural / decorative text
+    if (/^(Discrimina[cç][aã]o\s+das\s+parcelas|Demonstrativo\s+de\s+Pagamento|=>)$/i.test(k)) return;
+    if (/^(Fls|Documento\s+assinado|https?:)/i.test(k)) return;
+    const uid = `${k}::${v}`;
+    if (seen.has(uid)) return;
+    seen.add(uid);
+    fields.push({ key: k, value: v });
+  };
+
+  /** Labels that indicate the next item(s) are values */
+  const LABEL_PATTERNS = [
+    /^Empresa$/i, /^CNPJ$/i, /^Nome$/i, /^Matr[ií]cula$/i, /^Mat\.?$/i,
+    /^Fun[cç][aã]o$/i, /^Cargo$/i, /^Bairro$/i, /^Cidade$/i, /^CEP$/i, /^UF$/i,
+    /^Endere[cç]o$/i, /^PIS$/i, /^CPF$/i, /^Identidade$/i, /^RG$/i,
+    /^Data\s*Cr[eé]dito$/i, /^Data\s*Admiss[aã]o$/i, /^Dep\.?\s*sal/i,
+    /^Banco$/i, /^Ag[eê]ncia$/i, /^(C\/C|Conta\s*Corrente?)$/i,
+    /^Centro\s+(de\s+)?Custo$/i, /^Compet[eê]ncia$/i, /^Registro$/i,
+    /^Sal[aá]rio\s+(Base|Fixo)$/i, /^Sal\.?\s*Cont?r?\.?\s*INSS$/i,
+    /^Base\s+(?:para\s+)?FGTS$/i, /^FGTS\s+do\s+m[eê]s$/i,
+    /^Base\s+(?:C[aá]l\.?\s*)?IRRF$/i, /^Base\s+(?:para\s+)?INSS$/i,
+    /^Pens[aã]o\s+Alim/i,
+    /^Total\s+de\s+(Vencimentos|Proventos)$/i, /^Total\s+de\s+Desconto(s)?$/i,
+    /^L[ií]quido\s+a\s+Receber$/i, /^Valor\s+L[ií]quido$/i,
+    /^IR$/i, /^Local\s+do\s+Pagamento$/i,
+    /^Folha$/i, /^Tipo\s+Folha$/i,
+    /^CBO$/i, /^Departamento$/i, /^Filial$/i, /^Se[cç][aã]o$/i,
+    /^Admiss[aã]o$/i,
+  ];
+
+  /** Words that are purely structural headers (not label-value) */
+  const STRUCTURAL = /^(Discrimina[cç][aã]o\s+das\s+parcelas|Demonstrativo\s+de\s+Pagamento\s+Mensal|Composi[cç][aã]o\s+do\s+Sal[aá]rio|M[eê]s\s*\/\s*Ano|Evento|Discrimina[cç][aã]o|Ref|Proventos|Descontos|Vencimentos|C[oó]digo|Descri[cç][aã]o)$/i;
+
+  const isLabel = (s: string): boolean => {
+    const t = s.trim();
+    if (STRUCTURAL.test(t)) return false;
+    return LABEL_PATTERNS.some(p => p.test(t));
+  };
+
+  /** Check if two consecutive items form a multi-word label */
+  const tryMultiWordLabel = (items: TextItem[], startIdx: number): { label: string; endIdx: number } | null => {
+    if (startIdx + 1 >= items.length) return null;
+    const first = items[startIdx].str.trim();
+    const second = items[startIdx + 1].str.trim();
+    const combined = `${first} ${second}`;
+    // Also try with 3rd word
+    let combined3 = combined;
+    if (startIdx + 2 < items.length) {
+      combined3 = `${combined} ${items[startIdx + 2].str.trim()}`;
+    }
+    for (const p of LABEL_PATTERNS) {
+      if (p.test(combined3) && startIdx + 2 < items.length) return { label: combined3, endIdx: startIdx + 2 };
+      if (p.test(combined)) return { label: combined, endIdx: startIdx + 1 };
+    }
+    return null;
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    // Skip event table lines
+    if (eventsStartIdx >= 0 && i >= eventsStartIdx && i <= eventsEndIdx) continue;
+    // Skip signature / page footer lines
+    if (/Documento\s+assinado/i.test(lines[i].text)) continue;
+    if (/^Fls\.?:/i.test(lines[i].text.trim())) continue;
+    if (/^https?:/i.test(lines[i].text.trim())) continue;
+    if (/N[uú]mero\s+do\s+(processo|documento)/i.test(lines[i].text)) continue;
+
+    const items = lines[i].items;
+    let j = 0;
+    while (j < items.length) {
+      const str = items[j].str.trim();
+
+      // Try colon-separated: "Label: Value"
+      if (str.endsWith(':') && str.length > 1) {
+        const label = str.replace(/:$/, '').trim();
+        const valParts: string[] = [];
+        let k = j + 1;
+        while (k < items.length) {
+          const next = items[k].str.trim();
+          if (!next) { k++; continue; }
+          if (next.endsWith(':') && next.length > 1) break;
+          if (isLabel(next)) break;
+          valParts.push(next);
+          k++;
+        }
+        if (valParts.length > 0) add(label, valParts.join(' '));
+        j = k;
+        continue;
+      }
+
+      // Try multi-word label first
+      const multi = tryMultiWordLabel(items, j);
+      if (multi) {
+        const valParts: string[] = [];
+        let k = multi.endIdx + 1;
+        while (k < items.length) {
+          const next = items[k].str.trim();
+          if (!next) { k++; continue; }
+          if (isLabel(next)) break;
+          if (tryMultiWordLabel(items, k)) break;
+          if (next.endsWith(':') && next.length > 1) break;
+          valParts.push(next);
+          k++;
+          if (valParts.length >= 5) break;
+        }
+        if (valParts.length > 0) add(multi.label, valParts.join(' '));
+        j = k;
+        continue;
+      }
+
+      // Try single-word label
+      if (isLabel(str)) {
+        const valParts: string[] = [];
+        let k = j + 1;
+        while (k < items.length) {
+          const next = items[k].str.trim();
+          if (!next) { k++; continue; }
+          if (isLabel(next)) break;
+          if (tryMultiWordLabel(items, k)) break;
+          if (next.endsWith(':') && next.length > 1) break;
+          valParts.push(next);
+          k++;
+          if (valParts.length >= 5) break;
+        }
+        if (valParts.length > 0) add(str, valParts.join(' '));
+        j = k;
+        continue;
+      }
+
+      j++;
+    }
+  }
+
+  // Also extract period from events if not found
+  return fields;
+};
+
 // ======== Main entry points ========
 
 export const extractPattern1aPage = (items: TextItem[]): {
@@ -947,80 +1102,61 @@ export const extractPattern1aPage = (items: TextItem[]): {
   cnpj: string;
 } => {
   const lines = groupIntoLines(items);
-  
-  const header = extractHeader(lines);
-  const emp = extractEmployee(lines);
+
+  // Extract events (structured table)
   const { eventos, totalVencimentos, totalDescontos, valorLiquido, period: eventPeriod, headerIdx, endIdx } = extractEvents(lines);
-  const footer = extractFooter(lines);
-  const bank = extractBankInfo(lines);
-  
-  // Use period from events if header didn't find one
-  const period = header.period || eventPeriod;
-  const competencia = header.competencia || period;
-  
-  // Dynamic fields: scan all non-event lines for label-value pairs
-  const dynamicFields = extractDynamicFields(lines, headerIdx, endIdx);
-  
-  // Build fields: start with events, then totals, then footer, then dynamic
-  const fields: ExtractedField[] = eventos.map(e => ({
-    key: e.descricao,
-    value: e.vencimento !== '0' ? e.vencimento : e.desconto,
-  }));
-  if (totalVencimentos) fields.push({ key: 'Total de Vencimentos', value: totalVencimentos });
-  if (totalDescontos) fields.push({ key: 'Total de Descontos', value: totalDescontos });
-  if (valorLiquido) fields.push({ key: 'Valor Líquido', value: valorLiquido });
-  if (footer.salarioBase) fields.push({ key: 'Salário Base', value: footer.salarioBase });
-  if (footer.baseInss) fields.push({ key: 'Base INSS', value: footer.baseInss });
-  if (footer.baseFgts) fields.push({ key: 'Base FGTS', value: footer.baseFgts });
-  if (footer.fgtsMes) fields.push({ key: 'FGTS do Mês', value: footer.fgtsMes });
-  if (footer.baseIrrf) fields.push({ key: 'Base IRRF', value: footer.baseIrrf });
-  if (footer.irrf) fields.push({ key: 'IRRF', value: footer.irrf });
-  
-  // Merge dynamic fields (avoid duplicates)
+
+  // Extract ALL label-value pairs dynamically
+  const dynamicFields = extractAllFields(lines, headerIdx, endIdx);
+
+  // Add totals as fields too
+  const fields: ExtractedField[] = [...dynamicFields];
   const existingKeys = new Set(fields.map(f => f.key.toLowerCase()));
-  for (const df of dynamicFields) {
-    if (!existingKeys.has(df.key.toLowerCase())) {
-      fields.push(df);
-      existingKeys.add(df.key.toLowerCase());
-    }
+  const addIfNew = (key: string, value: string) => {
+    if (!value) return;
+    if (existingKeys.has(key.toLowerCase())) return;
+    fields.push({ key, value });
+    existingKeys.add(key.toLowerCase());
+  };
+  addIfNew('Total de Proventos', totalVencimentos);
+  addIfNew('Total de Descontos', totalDescontos);
+  addIfNew('Valor Líquido', valorLiquido);
+
+  // Also add event summaries as fields for export
+  for (const e of eventos) {
+    addIfNew(e.descricao, e.vencimento !== '0' ? e.vencimento : `-${e.desconto}`);
   }
-  
+
+  // Extract key identifiers from fields for backward compat
+  const findField = (regex: RegExp): string => {
+    const f = fields.find(f => regex.test(f.key));
+    return f?.value || '';
+  };
+
+  const empresa = findField(/^Empresa$/i);
+  const cnpj = findField(/^CNPJ$/i);
+  const nome = findField(/^(Nome|Matr[ií]cula)$/i);
+  const competencia = findField(/^Compet[eê]ncia$/i);
+  const period = eventPeriod || competencia;
+
   return {
     month: {
       month: period,
       fields,
-      empresa: header.empresa,
-      cnpj: header.cnpj,
-      centroCusto: header.centroCusto,
-      tipoFolha: header.tipoFolha,
-      competencia,
-      folhaNumero: header.folhaNumero,
-      codigoFuncionario: emp.codigo,
-      nomeFuncionario: emp.nome,
-      cbo: emp.cbo,
-      departamento: emp.departamento,
-      filial: emp.filial,
-      cargo: emp.cargo,
-      dataAdmissao: emp.dataAdmissao,
-      endereco: emp.endereco,
-      bairro: emp.bairro,
-      cidade: emp.cidade,
-      cep: emp.cep,
-      uf: emp.uf,
-      pis: emp.pis,
-      cpf: emp.cpf,
-      identidade: emp.identidade,
-      dataCredito: emp.dataCredito,
-      depSalFam: emp.depSalFam,
+      empresa,
+      cnpj,
+      competencia: competencia || period,
+      nomeFuncionario: findField(/^Nome$/i),
+      codigoFuncionario: findField(/^Matr[ií]cula$/i),
+      cargo: findField(/^(Fun[cç][aã]o|Cargo)$/i),
+      dataAdmissao: findField(/^(Data\s*Admiss[aã]o|Admiss[aã]o)$/i),
       eventos,
       totalVencimentos,
       totalDescontos,
       valorLiquido,
-      ...footer,
-      ...bank,
     },
-    employeeName: emp.nome,
-    cnpj: header.cnpj,
+    employeeName: findField(/^Nome$/i),
+    cnpj,
   };
 };
 
@@ -1028,17 +1164,17 @@ export const extractPattern1a = (pagesItems: TextItem[][]): Pattern1aResult => {
   let employeeName = '';
   let cnpj = '';
   const months: ExtractedMonth[] = [];
-  
+
   for (const pageItems of pagesItems) {
     const result = extractPattern1aPage(pageItems);
-    
+
     if (result.employeeName && !employeeName) employeeName = result.employeeName;
     if (result.cnpj && !cnpj) cnpj = result.cnpj;
-    
-    if (result.month.fields.length > 0) {
+
+    if (result.month.fields.length > 0 || (result.month.eventos && result.month.eventos.length > 0)) {
       months.push(result.month);
     }
   }
-  
+
   return { employeeName, cnpj, months };
 };
