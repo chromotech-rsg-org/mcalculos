@@ -208,6 +208,15 @@ const extractHeader = (lines: LayoutLine[]): {
           if (!result.competencia) result.competencia = `${numCompMatch[1]}/${numCompMatch[2]}`;
         }
       }
+      
+      // Standalone MM/YYYY in header (e.g. "03/2019" on its own or near other header info)
+      if (!result.period) {
+        const standaloneMatch = text.match(/\b(\d{2})\/(\d{4})\b/);
+        if (standaloneMatch) {
+          result.period = `${standaloneMatch[1]}/${standaloneMatch[2]}`;
+          if (!result.competencia) result.competencia = `${standaloneMatch[1]}/${standaloneMatch[2]}`;
+        }
+      }
     }
     
     // Folha numero
@@ -688,17 +697,121 @@ const extractEvents = (lines: LayoutLine[]): {
 };
 
 const extractFooter = (lines: LayoutLine[]): {
-  salarioBase: string; baseInss: string; baseFgts: string;
+  salarioBase: string; salarioContrInss: string; faixaIrrf: string;
+  baseInss: string; baseFgts: string;
   fgtsMes: string; baseIrrf: string; irrf: string;
+  totalVencimentos: string; totalDescontos: string; valorLiquido: string;
 } => {
-  const result = { salarioBase: '', baseInss: '', baseFgts: '', fgtsMes: '', baseIrrf: '', irrf: '' };
+  const result = {
+    salarioBase: '', salarioContrInss: '', faixaIrrf: '',
+    baseInss: '', baseFgts: '', fgtsMes: '', baseIrrf: '', irrf: '',
+    totalVencimentos: '', totalDescontos: '', valorLiquido: '',
+  };
   
+  // Helper: extract all label-value pairs from footer by scanning label lines and value lines
+  // Footer pattern: labels on one line, values on the next line (aligned by X position)
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i].text;
+    const items = lines[i].items;
     
-    // Style A: all labels on one compact line (e.g., "Salário Base  Sal.Contr.  Base FGTS  FGTS Mês  Base IRRF  IRRF")
-    if (/Sal[aá]rio\s+Base/i.test(text) && /Sal\.\s*Contr/i.test(text)) {
-      const values = lines[i].items
+    // Style A: Keypar-style footer with labels on one row and values below
+    // Row 1: "SALÁRIO BASE --- SALÁRIO CONTR. INSS --- FAIXA IRRF --- TOTAL DE VENCIMENTOS --- TOTAL DE DESCONTOS"
+    // Row 2: values
+    // Row 3: "BASE CÁLC. FGTS --- FGTS DO MÊS --- BASE CALCULO IRRF --- VALOR LÍQUIDO"
+    // Row 4: values
+    
+    if (/Sal[aá]rio\s+Base/i.test(text) && (/Sal[aá]rio\s+Contr/i.test(text) || /Sal\.\s*Contr/i.test(text) || /Total\s+de\s+Vencimentos/i.test(text) || /Faixa\s+IRRF/i.test(text))) {
+      // Multi-label footer row - map labels to X positions
+      const labelPositions: { label: string; x: number }[] = [];
+      
+      // Scan items to find labels and their positions
+      const footerLabels = [
+        { regex: /Sal[aá]rio\s+Base/i, name: 'salarioBase' },
+        { regex: /Sal[aá]rio\s+Contr\.?\s*INSS|Sal\.\s*Contr\.?\s*INSS/i, name: 'salarioContrInss' },
+        { regex: /Faixa\s+IRRF/i, name: 'faixaIrrf' },
+        { regex: /Total\s+de\s+Vencimentos/i, name: 'totalVencimentos' },
+        { regex: /Total\s+de\s+Descontos/i, name: 'totalDescontos' },
+      ];
+      
+      for (const fl of footerLabels) {
+        const x = findLabelXInItems(items, fl.regex);
+        if (x >= 0) labelPositions.push({ label: fl.name, x });
+      }
+      
+      // Get values from same line or next line
+      const valueItems = items
+        .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+        .sort((a, b) => a.x - b.x);
+      
+      const nextLineValues = (i + 1 < lines.length) ? lines[i + 1].items
+        .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().length > 1)
+        .sort((a, b) => a.x - b.x) : [];
+      
+      const allValues = valueItems.length > 0 ? valueItems : nextLineValues;
+      
+      // Match values to labels by closest X
+      for (const lp of labelPositions) {
+        let closestVal = '';
+        let closestDist = Infinity;
+        for (const v of allValues) {
+          const dist = Math.abs(v.x - lp.x);
+          if (dist < closestDist && dist < 250) {
+            closestDist = dist;
+            closestVal = v.str.trim();
+          }
+        }
+        if (closestVal) {
+          (result as any)[lp.label] = closestVal;
+        }
+      }
+      continue;
+    }
+    
+    // Second footer row: BASE CÁLC. FGTS, FGTS DO MÊS, BASE CALCULO IRRF, VALOR LÍQUIDO
+    if (/Base\s+C[aá]lc\.?\s*FGTS/i.test(text) || (/FGTS\s+do\s+M[eê]s/i.test(text) && /Base\s+C[aá]lculo?\s*IRRF/i.test(text))) {
+      const labelPositions2: { label: string; x: number }[] = [];
+      const footerLabels2 = [
+        { regex: /Base\s+C[aá]lc\.?\s*FGTS/i, name: 'baseFgts' },
+        { regex: /FGTS\s+do\s+M[eê]s/i, name: 'fgtsMes' },
+        { regex: /Base\s+C[aá]lculo?\s*IRRF/i, name: 'baseIrrf' },
+        { regex: /Valor\s+L[ií]quido/i, name: 'valorLiquido' },
+      ];
+      
+      for (const fl of footerLabels2) {
+        const x = findLabelXInItems(items, fl.regex);
+        if (x >= 0) labelPositions2.push({ label: fl.name, x });
+      }
+      
+      const valueItems2 = items
+        .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+        .sort((a, b) => a.x - b.x);
+      
+      const nextLineValues2 = (i + 1 < lines.length) ? lines[i + 1].items
+        .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().length > 1)
+        .sort((a, b) => a.x - b.x) : [];
+      
+      const allValues2 = valueItems2.length > 0 ? valueItems2 : nextLineValues2;
+      
+      for (const lp of labelPositions2) {
+        let closestVal = '';
+        let closestDist = Infinity;
+        for (const v of allValues2) {
+          const dist = Math.abs(v.x - lp.x);
+          if (dist < closestDist && dist < 250) {
+            closestDist = dist;
+            closestVal = v.str.trim();
+          }
+        }
+        if (closestVal) {
+          (result as any)[lp.label] = closestVal;
+        }
+      }
+      continue;
+    }
+    
+    // Style B: Old-style compact single line (Salário Base + Sal.Contr in one line)
+    if (/Sal[aá]rio\s+Base/i.test(text) && /Sal\.\s*Contr/i.test(text) && !result.salarioBase) {
+      const values = items
         .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
         .sort((a, b) => a.x - b.x);
       const vals = values.length > 0 ? values : (
@@ -707,15 +820,15 @@ const extractFooter = (lines: LayoutLine[]): {
           .sort((a, b) => a.x - b.x) : []
       );
       if (vals.length >= 1) result.salarioBase = vals[0].str.trim();
-      if (vals.length >= 2) result.baseInss = vals[1].str.trim();
+      if (vals.length >= 2) result.salarioContrInss = vals[1].str.trim();
       if (vals.length >= 3) result.baseFgts = vals[2].str.trim();
       if (vals.length >= 4) result.fgtsMes = vals[3].str.trim();
       if (vals.length >= 5) result.baseIrrf = vals[4].str.trim();
       if (vals.length >= 6) result.irrf = vals[5].str.trim();
-      break;
+      continue;
     }
     
-    // Style B: individual/grouped labels with positional value matching
+    // Style C: individual/grouped labels with positional value matching
     if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !result.salarioBase) {
       result.salarioBase = getAlignedValue(lines, i, /Sal[aá]rio/i);
     }
@@ -735,16 +848,27 @@ const extractFooter = (lines: LayoutLine[]): {
     }
     if (/Base\s+(Cal\.?\s*)?IRRF/i.test(text) && !result.baseIrrf) {
       result.baseIrrf = getAlignedValue(lines, i, /Base.*IRRF/i);
-      // Fallback: first "Base" on a line that specifically has IRRF
       if (!result.baseIrrf) {
         result.baseIrrf = getAlignedValue(lines, i, /^Base/i);
       }
     }
-    if (/Sal\.?\s*Cont?\.?\s*INSS/i.test(text) && !result.baseInss) {
-      result.baseInss = getAlignedValue(lines, i, /^Sal/i);
+    if (/Sal\.?\s*Cont?\.?\s*INSS/i.test(text) && !result.salarioContrInss) {
+      result.salarioContrInss = getAlignedValue(lines, i, /^Sal/i);
     }
     if (/Base\s+INSS/i.test(text) && !result.baseInss) {
       result.baseInss = getAlignedValue(lines, i, /Base.*INSS/i);
+    }
+    if (/Faixa\s+IRRF/i.test(text) && !result.faixaIrrf) {
+      result.faixaIrrf = getAlignedValue(lines, i, /Faixa/i);
+    }
+    if (/Total\s+de\s+Vencimentos/i.test(text) && !result.totalVencimentos) {
+      result.totalVencimentos = getAlignedValue(lines, i, /Total\s+de\s+Vencimentos/i);
+    }
+    if (/Total\s+de\s+Descontos/i.test(text) && !result.totalDescontos) {
+      result.totalDescontos = getAlignedValue(lines, i, /Total\s+de\s+Descontos/i);
+    }
+    if (/Valor\s+L[ií]quido/i.test(text) && !result.valorLiquido) {
+      result.valorLiquido = getAlignedValue(lines, i, /Valor\s+L[ií]quido/i);
     }
   }
   
@@ -1165,6 +1289,8 @@ export const extractPattern1aPage = (items: TextItem[]): {
 
   // Add footer fields
   addIfNew('Salário Base', footer.salarioBase);
+  addIfNew('Salário Contr. INSS', footer.salarioContrInss);
+  addIfNew('Faixa IRRF', footer.faixaIrrf);
   addIfNew('Base INSS', footer.baseInss);
   addIfNew('Base FGTS', footer.baseFgts);
   addIfNew('FGTS do Mês', footer.fgtsMes);
@@ -1176,10 +1302,10 @@ export const extractPattern1aPage = (items: TextItem[]): {
   addIfNew('Agência', bank.agencia);
   addIfNew('Conta Corrente', bank.contaCorrente);
 
-  // Add totals
-  addIfNew('Total Vencimentos', totalVencimentos);
-  addIfNew('Total Descontos', totalDescontos);
-  addIfNew('Valor Líquido', valorLiquido);
+  // Add totals (from events first, then footer as fallback)
+  addIfNew('Total Vencimentos', totalVencimentos || footer.totalVencimentos);
+  addIfNew('Total Descontos', totalDescontos || footer.totalDescontos);
+  addIfNew('Valor Líquido', valorLiquido || footer.valorLiquido);
 
   // Capture birthday/observation messages
   for (const line of lines) {
@@ -1206,9 +1332,9 @@ export const extractPattern1aPage = (items: TextItem[]): {
       fields,
       competencia: competencia || period,
       eventos,
-      totalVencimentos,
-      totalDescontos,
-      valorLiquido,
+      totalVencimentos: totalVencimentos || footer.totalVencimentos,
+      totalDescontos: totalDescontos || footer.totalDescontos,
+      valorLiquido: valorLiquido || footer.valorLiquido,
     },
     employeeName: nome,
     cnpj,
