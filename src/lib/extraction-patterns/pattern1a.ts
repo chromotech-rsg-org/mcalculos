@@ -200,21 +200,33 @@ const extractHeader = (lines: LayoutLine[]): {
         result.period = `${monthNum}/${compMatch[2]}`;
       }
       
-      // "01/2024" or "Competência: 01/2024" format
+      // "01/2024" or "Competência: 01/2024" format (with optional spaces around /)
       if (!result.period) {
-        const numCompMatch = text.match(/(?:Compet[eê]ncia|Per[ií]odo)[:\s]*(\d{2})\/(\d{4})/i);
+        const numCompMatch = text.match(/(?:Compet[eê]ncia|Per[ií]odo)[:\s]*(\d{1,2})\s*\/\s*(\d{4})/i);
         if (numCompMatch) {
-          result.period = `${numCompMatch[1]}/${numCompMatch[2]}`;
-          if (!result.competencia) result.competencia = `${numCompMatch[1]}/${numCompMatch[2]}`;
+          const m = numCompMatch[1].padStart(2, '0');
+          result.period = `${m}/${numCompMatch[2]}`;
+          if (!result.competencia) result.competencia = `${m}/${numCompMatch[2]}`;
         }
       }
       
-      // Standalone MM/YYYY in header (e.g. "03/2019" on its own or near other header info)
+      // "MÊS/ANO" label on this line with value nearby (e.g. "MÊS/ANO 03 / 2019")
       if (!result.period) {
-        const standaloneMatch = text.match(/\b(\d{2})\/(\d{4})\b/);
+        const mesAnoMatch = text.match(/M[eêÊ]S\s*\/\s*ANO\s*[:\s]*(\d{1,2})\s*\/\s*(\d{4})/i);
+        if (mesAnoMatch) {
+          const m = mesAnoMatch[1].padStart(2, '0');
+          result.period = `${m}/${mesAnoMatch[2]}`;
+          if (!result.competencia) result.competencia = `${m}/${mesAnoMatch[2]}`;
+        }
+      }
+      
+      // Standalone MM/YYYY in header (with optional spaces: "03 / 2019" or "03/2019")
+      if (!result.period) {
+        const standaloneMatch = text.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
         if (standaloneMatch) {
-          result.period = `${standaloneMatch[1]}/${standaloneMatch[2]}`;
-          if (!result.competencia) result.competencia = `${standaloneMatch[1]}/${standaloneMatch[2]}`;
+          const m = standaloneMatch[1].padStart(2, '0');
+          result.period = `${m}/${standaloneMatch[2]}`;
+          if (!result.competencia) result.competencia = `${m}/${standaloneMatch[2]}`;
         }
       }
     }
@@ -524,6 +536,176 @@ const extractEmployee = (lines: LayoutLine[]): {
   return result;
 };
 
+/**
+ * Detect the table header line. Returns the index and column X positions.
+ * Supports multiple header formats (Código/Cód., Evento, Discriminação, etc.)
+ */
+const detectEventHeader = (lines: LayoutLine[]): {
+  headerIdx: number;
+  vencX: number | null;
+  descX: number | null;
+  refX: number | null;
+} => {
+  for (let i = 0; i < lines.length; i++) {
+    const text = lines[i].text;
+    
+    // Layout A: "Código" / "Cód." + "Descrição" + "Vencimentos/Proventos"
+    const hasCodigo = /C[oó]d(?:igo)?\.?/i.test(text);
+    const hasDescricao = /Descri[cç][aã]o/i.test(text);
+    const hasVenc = /Vencimentos|Proventos/i.test(text);
+    
+    // Layout B: "Evento" + "Discriminação" + "Proventos"
+    const hasEvento = /\bEvento\b/i.test(text);
+    const hasDiscriminacao = /Discrimina[cç][aã]o/i.test(text);
+    
+    // Layout C: "Discriminação das parcelas" standalone header
+    const hasDiscParcelas = /Discrimina[cç][aã]o\s+das\s+parcelas/i.test(text);
+
+    // Layout D: "CÓD." + "REF" + "VENCIMENTOS" (abbreviated headers)
+    const hasRef = /\bRef(?:er[eê]ncia)?\.?\b/i.test(text);
+    const hasDescontos = /\bDescontos?\b/i.test(text);
+    
+    const isHeader = 
+      (hasCodigo && hasDescricao && hasVenc) ||
+      (hasEvento && hasDiscriminacao && hasVenc) ||
+      (hasDiscParcelas && hasVenc) ||
+      (hasCodigo && hasVenc) ||
+      (hasCodigo && hasDescontos) ||
+      (hasEvento && hasVenc);
+    
+    if (isHeader) {
+      const vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Proventos');
+      const descX = findColumnX(lines[i], 'Descontos') || findColumnX(lines[i], 'Desconto');
+      const refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref');
+      return { headerIdx: i, vencX, descX, refX };
+    }
+  }
+  return { headerIdx: -1, vencX: null, descX: null, refX: null };
+};
+
+/**
+ * Try to parse an event line using positional items (Parser A).
+ * Returns null if the line doesn't contain a valid event code item.
+ */
+const parseEventLineByItems = (
+  line: LayoutLine,
+  vencX: number,
+  descX: number,
+  refX: number | null,
+): PayslipEvent | null => {
+  // Find event code - skip date components (year preceded by "/" from Mês/Ano column)
+  let eventCodeItem: TextItem | undefined;
+  for (let j = 0; j < line.items.length; j++) {
+    const it = line.items[j];
+    if (!/^\d{3,4}$/.test(it.str.trim())) continue;
+    // Skip if preceded by "/" within previous 2 items (it's a year)
+    let isYear = false;
+    for (let k = j - 1; k >= Math.max(0, j - 2); k--) {
+      if (line.items[k].str.trim() === '/') { isYear = true; break; }
+    }
+    if (isYear) continue;
+    eventCodeItem = it;
+    break;
+  }
+  if (!eventCodeItem) return null;
+  
+  const codigo = eventCodeItem.str.trim();
+  
+  // Description: text items after code but before numeric values
+  const descItems: string[] = [];
+  const numericItems: TextItem[] = [];
+  let passedCode = false;
+  
+  for (const item of line.items) {
+    if (item === eventCodeItem) { passedCode = true; continue; }
+    if (!passedCode) continue;
+    
+    const val = item.str.trim();
+    if (!val) continue;
+    
+    if (/^[\d.,]+$/.test(val) && val.length >= 2) {
+      numericItems.push(item);
+    } else if (numericItems.length === 0) {
+      const itemCenterX = item.x + item.width / 2;
+      if (descX !== null && itemCenterX > descX + 50) continue;
+      // Skip period fragments
+      if (/^[\d/\s]+$/.test(val) && val.length <= 4) continue;
+      descItems.push(val);
+    } else {
+      if (/^[\d.,]+$/.test(val)) numericItems.push(item);
+    }
+  }
+  
+  const descricao = descItems.join(' ').replace(/\s+/g, ' ').trim();
+  if (!descricao) return null;
+  
+  // Classify numeric values by column position
+  let referencia = '';
+  let vencimento = '0';
+  let desconto = '0';
+  
+  for (const ni of numericItems) {
+    const val = ni.str.trim();
+    const centerX = ni.x + ni.width / 2;
+    
+    if (refX !== null && Math.abs(centerX - refX) < Math.abs(centerX - vencX) && Math.abs(centerX - refX) < Math.abs(centerX - descX)) {
+      referencia = val;
+    } else {
+      const col = classifyValueColumn(centerX, vencX, descX);
+      if (col === 'vencimento') vencimento = val;
+      else desconto = val;
+    }
+  }
+  
+  return { codigo, descricao, referencia, vencimento, desconto };
+};
+
+/**
+ * Fallback: parse an event line from its concatenated text (Parser B).
+ * Works when PDF delivers merged text per line (e.g., "001 Horas Normais 30,00 1.531,00").
+ * Pattern: code(3-4 digits) + description(text) + 1-3 monetary values at the end.
+ */
+const parseEventLineByTextFallback = (text: string): PayslipEvent | null => {
+  // Match: code at start, then description, then monetary values at end
+  const match = text.match(/^(\d{3,4})\s+(.+?)(?:\s+([\d.,]+(?:\s+[\d.,]+){0,2}))\s*$/);
+  if (!match) return null;
+  
+  const codigo = match[1];
+  const descricao = match[2].replace(/\s+/g, ' ').trim();
+  const valuesStr = match[3];
+  
+  // Don't parse lines where "description" looks like footer labels
+  if (/Sal[aá]rio|Base\s+FGTS|Base\s+INSS|Total|L[ií]quido|Composi[cç]/i.test(descricao)) return null;
+  
+  // Extract monetary values (right to left: desconto, vencimento, referência)
+  const values = valuesStr.match(/[\d.,]+/g) || [];
+  
+  let referencia = '';
+  let vencimento = '0';
+  let desconto = '0';
+  
+  if (values.length === 1) {
+    // Single value = vencimento
+    vencimento = values[0];
+  } else if (values.length === 2) {
+    // Two values: could be ref+venc, or venc+desc
+    // Heuristic: if first value has no comma or is small integer-like, it's referência
+    if (!values[0].includes(',') || /^\d{1,3}$/.test(values[0].replace(/\./g, ''))) {
+      referencia = values[0];
+      vencimento = values[1];
+    } else {
+      vencimento = values[0];
+      desconto = values[1];
+    }
+  } else if (values.length >= 3) {
+    referencia = values[0];
+    vencimento = values[1];
+    desconto = values[2];
+  }
+  
+  return { codigo, descricao, referencia, vencimento, desconto };
+};
+
 const extractEvents = (lines: LayoutLine[]): {
   eventos: PayslipEvent[];
   totalVencimentos: string;
@@ -539,65 +721,50 @@ const extractEvents = (lines: LayoutLine[]): {
   let valorLiquido = '';
   let period = '';
   
-  // Find table header line - support multiple layouts
-  let headerIdx = -1;
-  let vencX: number | null = null;
-  let descX: number | null = null;
-  let refX: number | null = null;
+  // Detect table header
+  const { headerIdx, vencX, descX, refX } = detectEventHeader(lines);
   
-  for (let i = 0; i < lines.length; i++) {
-    const text = lines[i].text;
-    
-    // Layout A: "Código" / "Cód." + "Descrição" + "Vencimentos/Proventos"
-    const hasCodigo = /C[oó]d(?:igo)?\.?/i.test(text);
-    const hasDescricao = /Descri[cç][aã]o/i.test(text);
-    const hasVenc = /Vencimentos|Proventos/i.test(text);
-    
-    // Layout B: "Evento" + "Discriminação" + "Proventos"
-    const hasEvento = /\bEvento\b/i.test(text);
-    const hasDiscriminacao = /Discrimina[cç][aã]o/i.test(text);
-    
-    // Layout C: "Discriminação das parcelas" standalone header
-    const hasDiscParcelas = /Discrimina[cç][aã]o\s+das\s+parcelas/i.test(text);
-    
-    if ((hasCodigo && hasDescricao && hasVenc) || (hasEvento && hasDiscriminacao && hasVenc) || (hasDiscParcelas && hasVenc)) {
-      headerIdx = i;
-      vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Proventos');
-      descX = findColumnX(lines[i], 'Descontos');
-      refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref');
-      break;
-    }
-  }
-  
-  if (headerIdx < 0 || vencX === null || descX === null) {
+  if (headerIdx < 0) {
     return { eventos, totalVencimentos, totalDescontos, valorLiquido, period, headerIdx: -1, endIdx: -1 };
   }
   
-  // Process lines after the header until totals
+  // Even if column X positions are missing, we can still try text fallback
+  const hasPositionalInfo = vencX !== null && descX !== null;
+  
+  // Process lines after the header until totals/footer
   for (let i = headerIdx + 1; i < lines.length; i++) {
     const line = lines[i];
     const text = line.text;
     
-    // ---- Totals detection (position-aware) ----
-    
-    // Total de Vencimentos / Total de Proventos
+    // ---- Totals detection ----
     if (/Total\s+de\s+(Vencimentos|Proventos)/i.test(text) && !totalVencimentos) {
       const v = getAlignedValue(lines, i, /Total\s+de\s+(Vencimentos|Proventos)/i);
       if (v) totalVencimentos = v;
+      // Also try text fallback for totals
+      if (!totalVencimentos) {
+        const m = text.match(/Total\s+de\s+(?:Vencimentos|Proventos)\s+([\d.,]+)/i);
+        if (m) totalVencimentos = m[1];
+      }
       continue;
     }
     
-    // Total de Descontos / Total de Desconto
     if (/Total\s+de\s+Desconto/i.test(text) && !totalDescontos) {
       const v = getAlignedValue(lines, i, /Total\s+de\s+Desconto/i);
       if (v) totalDescontos = v;
+      if (!totalDescontos) {
+        const m = text.match(/Total\s+de\s+Descontos?\s+([\d.,]+)/i);
+        if (m) totalDescontos = m[1];
+      }
       continue;
     }
     
-    // Valor Líquido / Líquido a Receber (with optional => arrow)
     if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber)/i.test(text) && !valorLiquido) {
       const v = getAlignedValue(lines, i, /L[ií]quido/i);
       if (v) valorLiquido = v;
+      if (!valorLiquido) {
+        const m = text.match(/(?:Valor\s+)?L[ií]quido(?:\s+a\s+Receber)?\s+([\d.,]+)/i);
+        if (m) valorLiquido = m[1];
+      }
       continue;
     }
     
@@ -608,7 +775,7 @@ const extractEvents = (lines: LayoutLine[]): {
     if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text)) break;
     if (/Local\s+do\s+Pagamento/i.test(text)) break;
     
-    // Try to extract period from "Mês/Ano" column (e.g. "8 / 2020")
+    // Try to extract period from "Mês/Ano" column (e.g. "8 / 2020" or "03 / 2019")
     if (!period) {
       const periodMatch = text.match(/(\d{1,2})\s*\/\s*(\d{4})/);
       if (periodMatch) {
@@ -617,71 +784,20 @@ const extractEvents = (lines: LayoutLine[]): {
       }
     }
     
-    // Find event code - skip date components (year preceded by "/" from Mês/Ano column)
-    let eventCodeItem: TextItem | undefined;
-    for (let j = 0; j < line.items.length; j++) {
-      const it = line.items[j];
-      if (!/^\d{3,4}$/.test(it.str.trim())) continue;
-      // Skip if preceded by "/" within previous 2 items (it's a year)
-      let isYear = false;
-      for (let k = j - 1; k >= Math.max(0, j - 2); k--) {
-        if (line.items[k].str.trim() === '/') { isYear = true; break; }
-      }
-      if (isYear) continue;
-      eventCodeItem = it;
-      break;
-    }
-    if (!eventCodeItem) continue;
-    
-    const codigo = eventCodeItem.str.trim();
-    
-    // Description: text items after code but before numeric values
-    const descItems: string[] = [];
-    const numericItems: TextItem[] = [];
-    let passedCode = false;
-    
-    for (const item of line.items) {
-      if (item === eventCodeItem) { passedCode = true; continue; }
-      if (!passedCode) continue;
-      
-      const val = item.str.trim();
-      if (!val) continue;
-      
-      if (/^[\d.,]+$/.test(val) && val.length >= 2) {
-        numericItems.push(item);
-      } else if (numericItems.length === 0) {
-        const itemCenterX = item.x + item.width / 2;
-        if (descX !== null && itemCenterX > descX + 50) continue;
-        // Skip period fragments like "8", "/", "2020" that appear before the code
-        if (/^[\d/\s]+$/.test(val) && val.length <= 4) continue;
-        descItems.push(val);
-      } else {
-        if (/^[\d.,]+$/.test(val)) numericItems.push(item);
-      }
+    // Try Parser A (positional) first
+    let event: PayslipEvent | null = null;
+    if (hasPositionalInfo) {
+      event = parseEventLineByItems(line, vencX!, descX!, refX);
     }
     
-    const descricao = descItems.join(' ').replace(/\s+/g, ' ').trim();
-    if (!descricao) continue;
-    
-    // Classify numeric values
-    let referencia = '';
-    let vencimento = '0';
-    let desconto = '0';
-    
-    for (const ni of numericItems) {
-      const val = ni.str.trim();
-      const centerX = ni.x + ni.width / 2;
-      
-      if (refX !== null && Math.abs(centerX - refX) < Math.abs(centerX - vencX!) && Math.abs(centerX - refX) < Math.abs(centerX - descX!)) {
-        referencia = val;
-      } else {
-        const col = classifyValueColumn(centerX, vencX!, descX!);
-        if (col === 'vencimento') vencimento = val;
-        else desconto = val;
-      }
+    // If Parser A failed, try Parser B (text fallback)
+    if (!event) {
+      event = parseEventLineByTextFallback(text);
     }
     
-    eventos.push({ codigo, descricao, referencia, vencimento, desconto });
+    if (event) {
+      eventos.push(event);
+    }
   }
   
   // Find last event-related line index
