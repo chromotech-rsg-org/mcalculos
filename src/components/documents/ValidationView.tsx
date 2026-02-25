@@ -346,12 +346,14 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
           const evId = `${ev.codigo}-${ev.descricao}`;
           const state = events.find(e => e.id === evId);
           if (state) {
+            // Only apply structural changes (description rename, code);
+            // preserve this month's own monetary values
             return {
               codigo: state.codigo,
               descricao: state.descricao,
-              referencia: state.referencia,
-              vencimento: state.vencimento,
-              desconto: state.desconto,
+              referencia: ev.referencia,
+              vencimento: ev.vencimento,
+              desconto: ev.desconto,
             };
           }
           return ev;
