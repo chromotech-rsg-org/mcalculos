@@ -220,6 +220,44 @@ const extractHeader = (lines: LayoutLine[]): {
         }
       }
       
+      // "MÊS/ANO" label with month and year on separate nearby lines
+      // e.g., line i: "MÊS/ANO", line i+1: "/ 2019", line i+2: "03"
+      if (!result.period && /M[eêÊ]S\s*\/\s*ANO/i.test(text)) {
+        let foundMonth = '';
+        let foundYear = '';
+        // Scan nearby lines (up to 5 ahead) for month digit and year
+        for (let k = i; k < Math.min(i + 6, headerEnd); k++) {
+          const nearText = lines[k].text.trim();
+          // Look for "/ YYYY" pattern
+          if (!foundYear) {
+            const yearMatch = nearText.match(/\/\s*(\d{4})/);
+            if (yearMatch) foundYear = yearMatch[1];
+          }
+          // Look for standalone month digit (1-12)
+          if (!foundMonth) {
+            const monthMatch = nearText.match(/^(\d{1,2})$/);
+            if (monthMatch && parseInt(monthMatch[1]) >= 1 && parseInt(monthMatch[1]) <= 12) {
+              foundMonth = monthMatch[1];
+            }
+          }
+          // Also check items on the line for standalone month digits
+          if (!foundMonth) {
+            for (const item of lines[k].items) {
+              const trimmed = item.str.trim();
+              if (/^\d{1,2}$/.test(trimmed) && parseInt(trimmed) >= 1 && parseInt(trimmed) <= 12) {
+                foundMonth = trimmed;
+                break;
+              }
+            }
+          }
+        }
+        if (foundMonth && foundYear) {
+          const m = foundMonth.padStart(2, '0');
+          result.period = `${m}/${foundYear}`;
+          if (!result.competencia) result.competencia = `${m}/${foundYear}`;
+        }
+      }
+      
       // Standalone MM/YYYY in header (with optional spaces: "03 / 2019" or "03/2019")
       if (!result.period) {
         const standaloneMatch = text.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
@@ -574,9 +612,39 @@ const detectEventHeader = (lines: LayoutLine[]): {
       (hasEvento && hasVenc);
     
     if (isHeader) {
-      const vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Proventos');
-      const descX = findColumnX(lines[i], 'Descontos') || findColumnX(lines[i], 'Desconto');
+      let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Proventos');
+      let descX = findColumnX(lines[i], 'Descontos') || findColumnX(lines[i], 'Desconto');
       const refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref');
+      
+      // If DESCONTOS not on the header line, search nearby lines (±3)
+      if (descX === null) {
+        for (let k = Math.max(0, i - 3); k <= Math.min(lines.length - 1, i + 3); k++) {
+          if (k === i) continue;
+          const nearbyDescX = findColumnX(lines[k], 'Descontos') || findColumnX(lines[k], 'Desconto');
+          if (nearbyDescX !== null) {
+            descX = nearbyDescX;
+            break;
+          }
+        }
+      }
+      
+      // If VENCIMENTOS not found, search nearby lines too
+      if (vencX === null) {
+        for (let k = Math.max(0, i - 3); k <= Math.min(lines.length - 1, i + 3); k++) {
+          if (k === i) continue;
+          const nearbyVencX = findColumnX(lines[k], 'Vencimentos') || findColumnX(lines[k], 'Proventos');
+          if (nearbyVencX !== null) {
+            vencX = nearbyVencX;
+            break;
+          }
+        }
+      }
+      
+      // Last resort: if we have vencX but not descX, estimate descX to the right
+      if (vencX !== null && descX === null) {
+        descX = vencX + 120;
+      }
+      
       return { headerIdx: i, vencX, descX, refX };
     }
   }
@@ -666,8 +734,8 @@ const parseEventLineByItems = (
  * Pattern: code(3-4 digits) + description(text) + 1-3 monetary values at the end.
  */
 const parseEventLineByTextFallback = (text: string): PayslipEvent | null => {
-  // Match: code at start, then description, then monetary values at end
-  const match = text.match(/^(\d{3,4})\s+(.+?)(?:\s+([\d.,]+(?:\s+[\d.,]+){0,2}))\s*$/);
+  // Match: code at start (with optional leading whitespace), then description, then monetary values at end
+  const match = text.trim().match(/^(\d{3,4})\s+(.+?)(?:\s+([\d.,]+(?:\s+[\d.,]+){0,2}))\s*$/);
   if (!match) return null;
   
   const codigo = match[1];
