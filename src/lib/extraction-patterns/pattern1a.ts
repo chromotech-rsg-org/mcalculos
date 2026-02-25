@@ -548,8 +548,8 @@ const extractEvents = (lines: LayoutLine[]): {
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i].text;
     
-    // Layout A: "Código" + "Descrição" + "Vencimentos/Proventos"
-    const hasCodigo = /C[oó]digo/i.test(text);
+    // Layout A: "Código" / "Cód." + "Descrição" + "Vencimentos/Proventos"
+    const hasCodigo = /C[oó]d(?:igo)?\.?/i.test(text);
     const hasDescricao = /Descri[cç][aã]o/i.test(text);
     const hasVenc = /Vencimentos|Proventos/i.test(text);
     
