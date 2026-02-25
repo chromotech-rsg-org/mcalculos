@@ -1,127 +1,105 @@
 
+Objetivo
+Corrigir a extração da tabela de Eventos/Tabela no padrão 1a para funcionar de forma consistente em holerites com variações de layout (como os da imagem 2 vs imagem 3), garantindo que:
+- a tabela seja extraída mesmo quando o PDF vem com texto “colado”/mesclado por linha;
+- o mês/ano (ex.: “03 / 2019” em MÊS/ANO) continue correto por holerite;
+- não dependa de um único formato de cabeçalho/colunas.
 
-# Sistema de Validacao e Aprendizado de Extracao
+Diagnóstico do que está acontecendo hoje
+1) A extração da tabela em `pattern1a.ts` está muito dependente de `TextItem` bem separado por coluna.
+- Quando o PDF entrega uma linha mesclada (ex.: “001 Horas Normais 30,00 1.531,00”), o parser atual pode não achar `eventCodeItem` e descartar a linha.
 
-## Objetivo
+2) O fallback atual para OCR acontece só quando praticamente nada foi extraído.
+- Em `extractDataFromPDF`, se vieram campos do cabeçalho/rodapé, mas a tabela falhou, não entra no fallback OCR para completar apenas eventos.
 
-Criar um sistema onde o usuario pode:
-- Revisar cada campo extraido lado a lado com o PDF
-- Corrigir titulos errados (ex: o sistema extraiu "Empresa" mas o valor e do "Nome")
-- Renomear campos para padronizar
-- Marcar campos como "ignorar" para futuras extracoes
-- Salvar essas regras como um "modelo aprendido" que pode ser nomeado e reutilizado
+3) Extração por imagem (`extractDataFromImage`) ainda não estrutura `eventos`.
+- Hoje OCR extrai campos simples; não monta `eventos[]`, então o Validar/Tabela pode ficar vazio nesse cenário.
 
-## Como funciona
+4) A lógica de validação de eventos usa uma lista “única” global e pode mascarar diferenças por holerite.
+- Isso não é a causa raiz da falha de extração, mas pode confundir resultado final quando há meses diferentes.
 
-Apos a extracao, aparece uma nova aba "Validar" na tela de detalhes do documento. Nessa aba, cada campo extraido e mostrado com opcoes de acao rapida. O usuario valida, corrige ou ignora. Quando terminar, salva como modelo nomeado (ex: "Modelo Centro de Ensino", "Modelo A.L. IND COM"). Na proxima extracao, o sistema aplica as regras do modelo salvo automaticamente.
+Abordagem de implementação
+Vou implementar uma estratégia híbrida de extração da tabela no padrão 1a:
+- Parser A (posicional, atual) continua sendo o principal.
+- Parser B (textual por linha) entra como fallback por linha quando o A falhar.
+- Fallback OCR parcial para eventos entra quando a tabela do PDF vier vazia/incompleta.
+- Normalização de cabeçalho de tabela e de MÊS/ANO para variações com espaços, acentos e abreviações.
 
----
+Plano técnico por etapas
 
-## Mudancas Tecnicas
+1) Fortalecer detecção do bloco da tabela (pattern1a)
+Arquivo: `src/lib/extraction-patterns/pattern1a.ts`
+- Refatorar `extractEvents` para separar em funções menores:
+  - `detectEventHeader(...)`
+  - `parseEventLineByItems(...)`
+  - `parseEventLineByTextFallback(...)`
+- Ampliar reconhecimento de cabeçalhos:
+  - CÓD./COD/CÓDIGO
+  - DESCRIÇÃO/DISCRIMINAÇÃO
+  - REFERÊNCIA/REF
+  - VENCIMENTOS/PROVENTOS
+  - DESCONTOS
+- Melhorar regra de fim de tabela com marcadores de rodapé mais robustos (Salário Base, Base FGTS, Valor Líquido, etc.), sem cortar linhas válidas.
 
-### 1. Novos tipos em `src/types/index.ts`
+2) Adicionar fallback textual por linha para eventos
+Arquivo: `src/lib/extraction-patterns/pattern1a.ts`
+- Quando parsing por itens falhar, aplicar parsing por texto:
+  - detectar código no início (`^\d{3,4}`)
+  - extrair números monetários da direita para a esquerda
+  - inferir referência/vencimento/desconto por ordem e/ou proximidade de colunas quando disponível
+- Tratar casos comuns do layout Semar/Keypar:
+  - códigos com zeros à esquerda (001)
+  - descrição com acento e abreviações
+  - linha com 2 ou 3 números (sem desconto ou sem referência explícita).
 
-Adicionar interfaces para o sistema de mapeamento/aprendizado:
+3) Completar “MÊS/ANO” para formatos com espaços
+Arquivo: `src/lib/extraction-patterns/pattern1a.ts`
+- Reforçar captura de competência/período para:
+  - `03/2019`
+  - `03 / 2019`
+  - ocorrência em linha “MÊS/ANO” mesmo sem label “Competência”.
+- Garantir que cada holerite mantenha seu próprio período (sem replicação indevida).
 
-```
-FieldMapping {
-  originalKey: string    // Titulo original extraido do PDF
-  mappedKey: string      // Titulo corrigido/padronizado pelo usuario
-  ignore: boolean        // Se true, nao mostra nas proximas extracoes
-  validated: boolean     // Se o usuario ja validou este campo
-}
+4) Fallback OCR parcial para eventos quando PDF falhar nessa parte
+Arquivo: `src/lib/extraction.ts` (e eventualmente helper em `pattern1a.ts`)
+- Após `extractPattern1a(pageItems)`, detectar páginas/meses com:
+  - campos ok, mas `eventos` vazio ou claramente insuficiente.
+- Nesses casos, rodar OCR para complementar somente `eventos` (não sobrescrever campos bons do PDF).
+- Unir resultado preservando totais e período por mês.
 
-ExtractionTemplate {
-  id: string
-  name: string           // Nome dado pelo usuario (ex: "Modelo Keypar")
-  fieldMappings: FieldMapping[]
-  createdAt: string
-  updatedAt: string
-}
-```
+5) Ajuste de consistência na validação para não “achatar” valores de eventos entre holerites
+Arquivo: `src/components/documents/ValidationView.tsx`
+- Manter a aba Eventos/Tabela, mas evitar aplicar os mesmos valores monetários para todos os meses ao “Aplicar Alterações”.
+- Preservar valores por holerite, aplicando em massa apenas ações de status/ignorar e, quando fizer sentido, renomeação de descrição.
 
-Adicionar campo opcional `validationStatus` em `ExtractedMonth`:
-```
-validationStatus?: 'pending' | 'validated' | 'partial'
-```
+6) Testes e validação
+Arquivos: `src/test/...` (novos testes unitários focados em parser)
+- Criar cenários sintéticos de linhas para:
+  - layout imagem 2 (já funciona)
+  - layout imagem 3 (falhava)
+- Cobrir:
+  - detecção de cabeçalho da tabela
+  - parsing por itens
+  - fallback textual
+  - período `03 / 2019`
+  - não duplicar/contaminar eventos entre meses.
 
-Adicionar campo opcional `templateId` em `Document` para vincular o documento a um modelo.
+Critérios de aceite
+- Holerite estilo imagem 2: continua extraindo tabela completa em Eventos/Tabela.
+- Holerite estilo imagem 3: passa a extrair tabela completa em Eventos/Tabela.
+- Mês/ano (ex.: 03/2019) aparece corretamente por holerite.
+- Em documentos com múltiplos holerites, cada mês mantém seus próprios valores de eventos.
+- Aba Validar/Eventos continua com rolagem e usabilidade atual.
 
-### 2. Storage para templates em `src/lib/storage.ts`
+Riscos e mitigação
+- Risco: parser textual capturar falso positivo fora da tabela.
+  - Mitigação: só ativar fallback textual dentro do intervalo detectado da tabela e exigir padrão de código + valores monetários.
+- Risco: OCR aumentar tempo de extração.
+  - Mitigação: fallback OCR apenas quando necessário (eventos ausentes/incompletos), não como padrão.
 
-Adicionar funcoes CRUD para templates no localStorage:
-- `getTemplates(): ExtractionTemplate[]`
-- `saveTemplate(template): void`
-- `deleteTemplate(id): void`
-- `getTemplateById(id): ExtractionTemplate | undefined`
-
-Chave: `mcalculos_templates`
-
-### 3. Nova aba "Validar" em `src/pages/DocumentDetail.tsx`
-
-Adicionar terceira aba alem de "Detalhado" e "Lista":
-
-**Aba "Validar"** mostra:
-- Cada campo extraido em formato de card com:
-  - Titulo original (editavel - campo de texto)
-  - Valor extraido (somente leitura)
-  - Botao "OK" (marca como validado - fica verde)
-  - Botao "Ignorar" (marca para ignorar nas proximas - fica cinza/riscado)
-  - Status visual: pendente (amarelo), validado (verde), ignorado (cinza)
-
-- No topo: barra de progresso de validacao (X de Y campos validados)
-- Botao "Salvar como Modelo" que abre dialog para nomear o modelo
-- Select para escolher um modelo existente e aplicar os mapeamentos
-
-### 4. Novo componente `src/components/documents/ValidationView.tsx`
-
-Componente dedicado para a validacao:
-- Recebe `extractedData`, `onUpdate` callback
-- Renderiza grade de cards para cada campo unico (agrupa por key)
-- Permite editar o titulo (key) de cada campo
-- Permite marcar como ignorado
-- Permite marcar como validado
-- Botao para salvar modelo
-- Botao para aplicar modelo existente
-
-### 5. Aplicar template na extracao em `src/lib/extraction-patterns/pattern1a.ts`
-
-Adicionar funcao `applyTemplate(months, template)`:
-- Percorre todos os `fields[]` de todos os meses
-- Para cada field, busca no template se existe um `FieldMapping` com `originalKey` igual
-- Se existir e `ignore === true`, remove o campo
-- Se existir e `mappedKey` diferente do original, renomeia o campo
-- Retorna os meses com campos ajustados
-
-Essa funcao e chamada apos a extracao, se o documento tem um `templateId` vinculado.
-
-### 6. Integrar no fluxo de extracao em `src/pages/DocumentDetail.tsx`
-
-Apos extracao bem-sucedida:
-- Se o documento tem `templateId`, aplica o template automaticamente
-- Mostra badge indicando "Modelo aplicado: [nome]"
-- Permite trocar ou desvincular modelo
-
----
-
-## Arquivos a modificar
-
-| Arquivo | Mudanca |
-|---|---|
-| `src/types/index.ts` | Adicionar `FieldMapping`, `ExtractionTemplate`, `validationStatus` |
-| `src/lib/storage.ts` | CRUD de templates no localStorage |
-| `src/components/documents/ValidationView.tsx` | **NOVO** - Componente de validacao |
-| `src/pages/DocumentDetail.tsx` | Nova aba "Validar", integracao com templates |
-| `src/lib/extraction-patterns/pattern1a.ts` | Funcao `applyTemplate()` |
-
-## Fluxo do usuario
-
-1. Faz upload do PDF e extrai
-2. Abre aba "Validar"
-3. Ve todos os campos com titulo e valor
-4. Corrige titulos errados clicando no nome do campo
-5. Marca campos irrelevantes como "Ignorar"
-6. Clica "Salvar como Modelo" e da um nome (ex: "Centro de Ensino")
-7. No proximo documento similar, seleciona o modelo salvo
-8. O sistema aplica as correcoes automaticamente
-
+Sequência de execução recomendada
+1. Refatorar/detalhar `extractEvents` (detecção + parsing híbrido).
+2. Ajustar captura de período MÊS/ANO.
+3. Implementar fallback OCR parcial para eventos.
+4. Ajustar aplicação de eventos na validação para respeitar variação por holerite.
+5. Validar com os dois layouts (imagem 2 e imagem 3) e testes unitários.
