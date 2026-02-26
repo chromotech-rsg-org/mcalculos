@@ -1,105 +1,83 @@
 
-Objetivo
-Corrigir a extração da tabela de Eventos/Tabela no padrão 1a para funcionar de forma consistente em holerites com variações de layout (como os da imagem 2 vs imagem 3), garantindo que:
-- a tabela seja extraída mesmo quando o PDF vem com texto “colado”/mesclado por linha;
-- o mês/ano (ex.: “03 / 2019” em MÊS/ANO) continue correto por holerite;
-- não dependa de um único formato de cabeçalho/colunas.
 
-Diagnóstico do que está acontecendo hoje
-1) A extração da tabela em `pattern1a.ts` está muito dependente de `TextItem` bem separado por coluna.
-- Quando o PDF entrega uma linha mesclada (ex.: “001 Horas Normais 30,00 1.531,00”), o parser atual pode não achar `eventCodeItem` e descartar a linha.
+## Correcao da Extracao de Holerites Keypar (PDF 2)
 
-2) O fallback atual para OCR acontece só quando praticamente nada foi extraído.
-- Em `extractDataFromPDF`, se vieram campos do cabeçalho/rodapé, mas a tabela falhou, não entra no fallback OCR para completar apenas eventos.
+### Problema Identificado
 
-3) Extração por imagem (`extractDataFromImage`) ainda não estrutura `eventos`.
-- Hoje OCR extrai campos simples; não monta `eventos[]`, então o Validar/Tabela pode ficar vazio nesse cenário.
+O PDF da Keypar ("Demonstrativo de Pagamento de Salario") tem um layout onde o pdf.js entrega text items com colunas mescladas ou desalinhadas. A saida do parser mostra valores como "9,131.531,00" (concatenacao errada de referencia + vencimento) e uma coluna fantasma "TOS" (fragmento de "DESCONTOS"). O Parser A (posicional) falha porque as coordenadas X das colunas estao incorretas, e o Parser B (textual) nao consegue distinguir vencimento de desconto quando ha 2 valores numericos.
 
-4) A lógica de validação de eventos usa uma lista “única” global e pode mascarar diferenças por holerite.
-- Isso não é a causa raiz da falha de extração, mas pode confundir resultado final quando há meses diferentes.
+O PDF da A.L. IND COM funciona porque seus text items sao bem separados por coluna.
 
-Abordagem de implementação
-Vou implementar uma estratégia híbrida de extração da tabela no padrão 1a:
-- Parser A (posicional, atual) continua sendo o principal.
-- Parser B (textual por linha) entra como fallback por linha quando o A falhar.
-- Fallback OCR parcial para eventos entra quando a tabela do PDF vier vazia/incompleta.
-- Normalização de cabeçalho de tabela e de MÊS/ANO para variações com espaços, acentos e abreviações.
+### Mudancas Planejadas
 
-Plano técnico por etapas
+**1. Heuristica de classificacao vencimento/desconto por codigo (pattern1a.ts)**
 
-1) Fortalecer detecção do bloco da tabela (pattern1a)
-Arquivo: `src/lib/extraction-patterns/pattern1a.ts`
-- Refatorar `extractEvents` para separar em funções menores:
-  - `detectEventHeader(...)`
-  - `parseEventLineByItems(...)`
-  - `parseEventLineByTextFallback(...)`
-- Ampliar reconhecimento de cabeçalhos:
-  - CÓD./COD/CÓDIGO
-  - DESCRIÇÃO/DISCRIMINAÇÃO
-  - REFERÊNCIA/REF
-  - VENCIMENTOS/PROVENTOS
-  - DESCONTOS
-- Melhorar regra de fim de tabela com marcadores de rodapé mais robustos (Salário Base, Base FGTS, Valor Líquido, etc.), sem cortar linhas válidas.
+Quando o parser posicional falha ou as coordenadas X sao ambiguas, usar o codigo do evento para classificar:
+- Codigos 2xxx (INSS, IRRF, contribuicoes, descontos) = DESCONTO
+- Codigos que contem "Desc" na descricao = DESCONTO
+- Demais codigos = VENCIMENTO
 
-2) Adicionar fallback textual por linha para eventos
-Arquivo: `src/lib/extraction-patterns/pattern1a.ts`
-- Quando parsing por itens falhar, aplicar parsing por texto:
-  - detectar código no início (`^\d{3,4}`)
-  - extrair números monetários da direita para a esquerda
-  - inferir referência/vencimento/desconto por ordem e/ou proximidade de colunas quando disponível
-- Tratar casos comuns do layout Semar/Keypar:
-  - códigos com zeros à esquerda (001)
-  - descrição com acento e abreviações
-  - linha com 2 ou 3 números (sem desconto ou sem referência explícita).
+Isso sera aplicado tanto no Parser A quanto no Parser B como heuristica de desempate.
 
-3) Completar “MÊS/ANO” para formatos com espaços
-Arquivo: `src/lib/extraction-patterns/pattern1a.ts`
-- Reforçar captura de competência/período para:
-  - `03/2019`
-  - `03 / 2019`
-  - ocorrência em linha “MÊS/ANO” mesmo sem label “Competência”.
-- Garantir que cada holerite mantenha seu próprio período (sem replicação indevida).
+**2. Melhorar Parser B (texto fallback) para Keypar**
 
-4) Fallback OCR parcial para eventos quando PDF falhar nessa parte
-Arquivo: `src/lib/extraction.ts` (e eventualmente helper em `pattern1a.ts`)
-- Após `extractPattern1a(pageItems)`, detectar páginas/meses com:
-  - campos ok, mas `eventos` vazio ou claramente insuficiente.
-- Nesses casos, rodar OCR para complementar somente `eventos` (não sobrescrever campos bons do PDF).
-- Unir resultado preservando totais e período por mês.
+Reformular `parseEventLineByTextFallback` para lidar com as variantes:
+- 1 valor: classificar por codigo (2xxx = desconto, outros = vencimento)
+- 2 valores: primeiro e referencia, segundo e venc/desc conforme codigo
+- 3 valores: referencia + vencimento + desconto
 
-5) Ajuste de consistência na validação para não “achatar” valores de eventos entre holerites
-Arquivo: `src/components/documents/ValidationView.tsx`
-- Manter a aba Eventos/Tabela, mas evitar aplicar os mesmos valores monetários para todos os meses ao “Aplicar Alterações”.
-- Preservar valores por holerite, aplicando em massa apenas ações de status/ignorar e, quando fizer sentido, renomeação de descrição.
+Tratar tambem linhas com descricao contendo parenteses, barras e acentos (ex: "Horas Extras c/ 100%", "Desc.Adto Salarial", "1/3 Ferias").
 
-6) Testes e validação
-Arquivos: `src/test/...` (novos testes unitários focados em parser)
-- Criar cenários sintéticos de linhas para:
-  - layout imagem 2 (já funciona)
-  - layout imagem 3 (falhava)
-- Cobrir:
-  - detecção de cabeçalho da tabela
-  - parsing por itens
-  - fallback textual
-  - período `03 / 2019`
-  - não duplicar/contaminar eventos entre meses.
+**3. Fortalecer Parser A para colunas proximas**
 
-Critérios de aceite
-- Holerite estilo imagem 2: continua extraindo tabela completa em Eventos/Tabela.
-- Holerite estilo imagem 3: passa a extrair tabela completa em Eventos/Tabela.
-- Mês/ano (ex.: 03/2019) aparece corretamente por holerite.
-- Em documentos com múltiplos holerites, cada mês mantém seus próprios valores de eventos.
-- Aba Validar/Eventos continua com rolagem e usabilidade atual.
+No `parseEventLineByItems`, quando vencX e descX estao muito proximos (< 80px de distancia), ativar a heuristica por codigo em vez de confiar na posicao X. Tambem tratar o caso em que o texto "DESCONTOS" aparece fragmentado ("TOS" + "DESCON") em items separados.
 
-Riscos e mitigação
-- Risco: parser textual capturar falso positivo fora da tabela.
-  - Mitigação: só ativar fallback textual dentro do intervalo detectado da tabela e exigir padrão de código + valores monetários.
-- Risco: OCR aumentar tempo de extração.
-  - Mitigação: fallback OCR apenas quando necessário (eventos ausentes/incompletos), não como padrão.
+**4. Melhorar extracao de empresa Keypar**
 
-Sequência de execução recomendada
-1. Refatorar/detalhar `extractEvents` (detecção + parsing híbrido).
-2. Ajustar captura de período MÊS/ANO.
-3. Implementar fallback OCR parcial para eventos.
-4. Ajustar aplicação de eventos na validação para respeitar variação por holerite.
-5. Validar com os dois layouts (imagem 2 e imagem 3) e testes unitários.
+Na funcao `extractHeader`, adicionar reconhecimento do formato "7 - COMERCIAL KEYPAR REPRES E SUPERM LTDA" (numero + hifen + nome) e do label "LOCAL" seguido do valor (ex: "LJ UBA1 -FISCAL DE LOJA JUNIOR").
+
+**5. Garantir MES/ANO correto por pagina**
+
+O formato Keypar tem o mes (ex: "03") e o ano (ex: "/ 2019") em linhas separadas, as vezes com "05 / 2023 MES/ANO" na primeira linha (que e a data do documento judicial, nao a competencia do holerite). Ajustar para:
+- Priorizar o mes/ano que aparece PROXIMO da tabela de eventos (nao no cabecalho do documento judicial)
+- Quando houver conflito entre "05/2023" (cabecalho) e "03/2019" (competencia), usar o que esta mais proximo dos dados do funcionario
+
+**6. Extracao de campos do rodape Keypar**
+
+Garantir que TOTAL DE VENCIMENTOS, TOTAL DE DESCONTOS, VALOR LIQUIDO, SALARIO BASE, BASE CALC. FGTS, FGTS DO MES, BASE CALCULO IRRF sejam capturados corretamente mesmo quando os labels e valores estao em linhas separadas no formato Keypar.
+
+### Arquivos Modificados
+
+- `src/lib/extraction-patterns/pattern1a.ts` - Todas as 6 mudancas acima
+- `src/lib/extraction-patterns/detector.ts` - Melhorar deteccao do padrao Keypar como 1a
+
+### Detalhes Tecnicos
+
+A funcao `parseEventLineByTextFallback` sera reescrita para:
+
+```text
+Entrada: "001 Horas Normais 30,00 1.531,00"
+Saida: { codigo: "001", descricao: "Horas Normais", referencia: "30,00", vencimento: "1.531,00", desconto: "0" }
+
+Entrada: "2000 INSS 9,00 168,45"
+Saida: { codigo: "2000", descricao: "INSS", referencia: "9,00", vencimento: "0", desconto: "168,45" }
+
+Entrada: "2464 Desc.Adto Salarial 570,19"
+Saida: { codigo: "2464", descricao: "Desc.Adto Salarial", referencia: "", vencimento: "0", desconto: "570,19" }
+```
+
+A heuristica de codigo sera uma funcao auxiliar:
+
+```text
+isDescontoByCode(codigo, descricao):
+  - codigo comeca com "2" (2000-2999) = true
+  - descricao contem "Desc" ou "Desconto" = true
+  - descricao contem "INSS" ou "IRRF" e nao contem "Base" = true
+  - caso contrario = false
+```
+
+Para o MES/ANO, a logica sera:
+1. Buscar periodo na zona do cabecalho do funcionario (perto de "CADASTRO", "NOME", "DATA ADMISSAO")
+2. Ignorar datas que estejam na primeira linha do documento (que podem ser do protocolo judicial)
+3. Manter a varredura multi-linha existente como fallback
+
