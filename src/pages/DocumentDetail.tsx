@@ -40,6 +40,7 @@ const DocumentDetail: React.FC = () => {
   const [selectedPattern, setSelectedPattern] = useState<string>('auto');
   
   const pdfContainerRef = useRef<HTMLDivElement>(null);
+  const [pdfBlobUrls, setPdfBlobUrls] = useState<Record<number, string>>({});
 
   useEffect(() => {
     if (id) {
@@ -52,6 +53,32 @@ const DocumentDetail: React.FC = () => {
       }
     }
   }, [id, navigate]);
+
+  // Convert base64 PDF data to Blob URLs for reliable iframe rendering
+  useEffect(() => {
+    if (!doc) return;
+    const urls: Record<number, string> = {};
+    doc.files.forEach((file, index) => {
+      if (file.type === 'application/pdf' && file.base64) {
+        try {
+          const base64 = file.base64.includes(',') ? file.base64.split(',')[1] : file.base64;
+          const binary = atob(base64);
+          const bytes = new Uint8Array(binary.length);
+          for (let i = 0; i < binary.length; i++) {
+            bytes[i] = binary.charCodeAt(i);
+          }
+          const blob = new Blob([bytes], { type: 'application/pdf' });
+          urls[index] = URL.createObjectURL(blob);
+        } catch (e) {
+          console.warn('Failed to create blob URL for file', index, e);
+        }
+      }
+    });
+    setPdfBlobUrls(urls);
+    return () => {
+      Object.values(urls).forEach(url => URL.revokeObjectURL(url));
+    };
+  }, [doc?.id, doc?.files.length]);
 
   const handlePatternChange = (value: string) => {
     setSelectedPattern(value);
@@ -472,11 +499,18 @@ const DocumentDetail: React.FC = () => {
               <CardContent className="flex-1 overflow-hidden p-3 pt-0">
                 <div ref={pdfContainerRef} className="rounded-lg overflow-hidden bg-muted h-full">
                   {doc.files[activeFileIndex]?.type === 'application/pdf' ? (
-                    <iframe
-                      src={doc.files[activeFileIndex].base64}
-                      className="w-full h-full"
-                      title="PDF Preview"
-                    />
+                    pdfBlobUrls[activeFileIndex] ? (
+                      <iframe
+                        src={pdfBlobUrls[activeFileIndex]}
+                        className="w-full h-full"
+                        title="PDF Preview"
+                      />
+                    ) : (
+                      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
+                        <Loader2 className="h-5 w-5 animate-spin mr-2" />
+                        Carregando preview...
+                      </div>
+                    )
                   ) : (
                     <img
                       src={doc.files[activeFileIndex]?.base64}
