@@ -24,7 +24,7 @@ const MONTH_LABELS: Record<string, string> = {
 // ======== Helpers ========
 
 /** Known labels that should NOT be treated as values */
-const KNOWN_LABELS = /^(Empresa|CNPJ|Nome|Matr[ií]cula|Mat\.|Fun[cç][aã]o|Cargo|Bairro|Cidade|CEP|UF|Endere[cç]o|PIS|CPF|Identidade|Data\s*(Cr[eé]dito|Admiss[aã]o)|Dep\.?\s*sal|Banco|Ag[eê]ncia|C\/C|Conta|Compet[eê]ncia|Registro|Sal[aá]rio|Ref|Proventos|Descontos|Vencimentos|Discrimina|Evento|C[oó]digo|Descri[cç]|Local|Composi[cç]|IR$|Demonstrativo|Pagamento|Mensal|Total|Folha|Mensalista|Horista|Centro|Custo)$/i;
+const KNOWN_LABELS = /^(Empresa|CNPJ|Nome|Matr[ií]cula|Mat\.|Fun[cç][aã]o|Cargo|Bairro|Cidade|CEP|UF|Endere[cç]o|PIS|CPF|Identidade|Data\s*(Cr[eé]dito|Admiss[aã]o)|Dep\.?\s*sal|Banco|Ag[eê]ncia|C\/C|Conta|Compet[eê]ncia|Registro|Sal[aá]rio|Ref|Proventos|Descontos|Vencimentos|Discrimina|Evento|C[oó]digo|Descri[cç]|Local|Composi[cç]|IR$|Demonstrativo|Pagamento|Mensal|Total|Folha|Mensalista|Horista|Centro|Custo|Cadastro)$/i;
 
 /** Check if a string looks like a pure value (not a label) */
 const isValue = (s: string): boolean => {
@@ -32,6 +32,20 @@ const isValue = (s: string): boolean => {
   if (!trimmed) return false;
   if (KNOWN_LABELS.test(trimmed)) return false;
   return true;
+};
+
+/**
+ * Heuristic: classify an event as DESCONTO based on its code and description.
+ * Codes 2xxx = discount; description containing "Desc"/"INSS"/"IRRF" (without "Base") = discount.
+ */
+const isDescontoByCode = (codigo: string, descricao: string): boolean => {
+  const code = parseInt(codigo, 10);
+  if (code >= 2000 && code < 3000) return true;
+  if (/\bDesc\.?|Desconto/i.test(descricao)) return true;
+  if (/\bINSS\b/i.test(descricao) && !/\bBase\b/i.test(descricao)) return true;
+  if (/\bIRRF\b/i.test(descricao) && !/\bBase\b/i.test(descricao)) return true;
+  if (/Contribui[cç][aã]o\s+Assistencial/i.test(descricao)) return true;
+  return false;
 };
 
 /** Try to find a labeled value on a line: "Label: Value" or "Label  Value" */
@@ -116,19 +130,20 @@ const getAlignedValue = (lines: LayoutLine[], lineIdx: number, labelRegex: RegEx
 const extractHeader = (lines: LayoutLine[]): {
   empresa: string; cnpj: string; centroCusto: string;
   tipoFolha: string; competencia: string; period: string; folhaNumero: string;
+  local: string;
 } => {
-  const result = { empresa: '', cnpj: '', centroCusto: '', tipoFolha: '', competencia: '', period: '', folhaNumero: '' };
+  const result = { empresa: '', cnpj: '', centroCusto: '', tipoFolha: '', competencia: '', period: '', folhaNumero: '', local: '' };
   
-  const headerEnd = Math.min(15, lines.length);
+  const headerEnd = Math.min(20, lines.length);
   
   for (let i = 0; i < headerEnd; i++) {
     const line = lines[i];
     const text = line.text;
     const items = line.items;
     
-    // CNPJ - multiple formats
+    // CNPJ - multiple formats (including "04.063.469/0002.01" with dot instead of dash)
     if (!result.cnpj) {
-      const cnpjMatch = text.match(/CNPJ[:\s]*([\d./-]+)/i) || text.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}-\d{2})/);
+      const cnpjMatch = text.match(/CNPJ[:\s]*([\d./-]+)/i) || text.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}[.-]\d{2})/);
       if (cnpjMatch) result.cnpj = cnpjMatch[1].trim();
     }
     
@@ -151,11 +166,18 @@ const extractHeader = (lines: LayoutLine[]): {
         }
       }
       
-      // Fallback: line after "Empresa" label or first non-label line
+      // Keypar format: "7 - COMERCIAL KEYPAR REPRES E SUPERM LTDA"
+      if (!result.empresa) {
+        const keyparMatch = text.match(/^\s*\d+\s*-\s*([A-ZÀ-Ú][A-ZÀ-Ú\s.&]+(?:LTDA|S\.?A\.?|EIRELI|ME|EPP))/i);
+        if (keyparMatch) {
+          result.empresa = keyparMatch[1].trim();
+        }
+      }
+      
+      // Fallback: line after "Empresa" label or company name indicators
       if (!result.empresa) {
         const cleaned = text.replace(/[\d./-]+/g, '').replace(/CNPJ|Codigo|Folha|Mensalista|C[oó]digo|Descri[cç]|Evento|Discrimina|Demonstrativo|Pagamento|Mensal/gi, '').trim();
         if (cleaned.length > 5 && /[A-ZÀ-Ú]{2,}/.test(cleaned)) {
-          // Check it's not just a person's name (employee) - look for company indicators
           if (/LTDA|S\.?A\.?|EIRELI|ME\b|EPP|COMERCIAL|IND|COM\b|CENTRO|UNIFICADO|FEDERAL|SERVICO|GRUPO/i.test(cleaned)) {
             result.empresa = cleaned;
           }
@@ -166,7 +188,45 @@ const extractHeader = (lines: LayoutLine[]): {
     // If we find "Empresa" label on this line and value on next line
     if (!result.empresa && /^Empresa$/i.test(text.trim()) && i + 1 < headerEnd) {
       const nextText = lines[i + 1].text.replace(/CNPJ.*$/i, '').trim();
-      if (nextText.length > 3) result.empresa = nextText;
+      if (nextText.length > 3) {
+        // Check for Keypar "number - name" format on the next line
+        const keyparNext = nextText.match(/^\s*\d+\s*-\s*(.+)/);
+        result.empresa = keyparNext ? keyparNext[1].trim() : nextText;
+      }
+    }
+    
+    // EMPRESA label on a separate line with value on a different nearby line
+    if (!result.empresa && /^EMPRESA$/i.test(text.trim())) {
+      // Scan next few lines for a company-like name
+      for (let k = i + 1; k < Math.min(i + 4, headerEnd); k++) {
+        const nearText = lines[k].text.trim();
+        // Skip labels
+        if (/^(CNPJ|CADASTRO|NOME|LOCAL|CARGO|CBO|MÊS)/i.test(nearText)) continue;
+        // Keypar format: "7 - COMPANY NAME"
+        const kpMatch = nearText.match(/^\d+\s*-\s*(.+)/);
+        if (kpMatch) { result.empresa = kpMatch[1].trim(); break; }
+        if (nearText.length > 5 && /[A-ZÀ-Ú]{3,}/.test(nearText) && /LTDA|COMERCIAL|IND|COM\b|S\.?A/i.test(nearText)) {
+          result.empresa = nearText; break;
+        }
+      }
+    }
+    
+    // LOCAL label (Keypar: "LJ UBA1 -FISCAL DE LOJA JUNIOR")
+    if (!result.local) {
+      if (/^LOCAL$/i.test(text.trim())) {
+        for (let k = i + 1; k < Math.min(i + 4, headerEnd); k++) {
+          const nearText = lines[k].text.trim();
+          if (/^(CNPJ|CADASTRO|NOME|EMPRESA|CARGO|CBO|MÊS|CÓD)/i.test(nearText)) continue;
+          if (nearText.length > 3 && !/^[\d./-]+$/.test(nearText)) {
+            result.local = nearText; break;
+          }
+        }
+      } else {
+        const localMatch = text.match(/\bLOCAL\s+(.+)/i);
+        if (localMatch && localMatch[1].trim().length > 3) {
+          result.local = localMatch[1].trim();
+        }
+      }
     }
     
     // Centro de Custo
@@ -183,8 +243,8 @@ const extractHeader = (lines: LayoutLine[]): {
       } else if (/Mensalista|Horista/i.test(text)) {
         const m = text.match(/(Mensalista|Horista)/i);
         if (m) result.tipoFolha = m[1];
-      } else if (/Demonstrativo\s+de\s+Pagamento\s+Mensal/i.test(text)) {
-        result.tipoFolha = 'Folha Mensal';
+      } else if (/Demonstrativo\s+de\s+Pagamento\s+(Mensal|de\s+Sal[aá]rio)/i.test(text)) {
+        result.tipoFolha = 'Demonstrativo de Pagamento';
       }
     }
     
@@ -221,12 +281,12 @@ const extractHeader = (lines: LayoutLine[]): {
       }
       
       // "MÊS/ANO" label with month and year on separate nearby lines
-      // e.g., line i: "MÊS/ANO", line i+1: "/ 2019", line i+2: "03"
+      // Keypar: line "MÊS/ANO", then "/ 2019" on one line, "03" on another, etc.
       if (!result.period && /M[eêÊ]S\s*\/\s*ANO/i.test(text)) {
         let foundMonth = '';
         let foundYear = '';
-        // Scan nearby lines (up to 5 ahead) for month digit and year
-        for (let k = i; k < Math.min(i + 6, headerEnd); k++) {
+        // Scan nearby lines (up to 8 ahead) for month digit and year
+        for (let k = i; k < Math.min(i + 8, headerEnd); k++) {
           const nearText = lines[k].text.trim();
           // Look for "/ YYYY" pattern
           if (!foundYear) {
@@ -235,16 +295,11 @@ const extractHeader = (lines: LayoutLine[]): {
           }
           // Look for standalone month digit (1-12)
           if (!foundMonth) {
-            const monthMatch = nearText.match(/^(\d{1,2})$/);
-            if (monthMatch && parseInt(monthMatch[1]) >= 1 && parseInt(monthMatch[1]) <= 12) {
-              foundMonth = monthMatch[1];
-            }
-          }
-          // Also check items on the line for standalone month digits
-          if (!foundMonth) {
+            // Check items individually for standalone month digits
             for (const item of lines[k].items) {
               const trimmed = item.str.trim();
               if (/^\d{1,2}$/.test(trimmed) && parseInt(trimmed) >= 1 && parseInt(trimmed) <= 12) {
+                // Make sure this isn't part of a date or year
                 foundMonth = trimmed;
                 break;
               }
@@ -259,7 +314,8 @@ const extractHeader = (lines: LayoutLine[]): {
       }
       
       // Standalone MM/YYYY in header (with optional spaces: "03 / 2019" or "03/2019")
-      if (!result.period) {
+      // But avoid capturing dates from judicial protocol headers (first line)
+      if (!result.period && i > 0) {
         const standaloneMatch = text.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
         if (standaloneMatch) {
           const m = standaloneMatch[1].padStart(2, '0');
@@ -296,7 +352,8 @@ const extractEmployee = (lines: LayoutLine[]): {
   for (let i = 0; i < lines.length; i++) {
     const text = lines[i].text;
     if (
-      (/C[oó]digo/i.test(text) && /Descri[cç][aã]o/i.test(text)) ||
+      (/C[oó]d(?:igo)?\.?/i.test(text) && /Descri[cç][aã]o/i.test(text)) ||
+      (/C[oó]d(?:igo)?\.?/i.test(text) && /Vencimentos|Proventos/i.test(text)) ||
       (/Evento/i.test(text) && /Discrimina[cç][aã]o/i.test(text)) ||
       (/Evento/i.test(text) && /Proventos/i.test(text))
     ) {
@@ -305,7 +362,45 @@ const extractEmployee = (lines: LayoutLine[]): {
     }
   }
   
-  const searchEnd = tableHeaderIdx > 0 ? tableHeaderIdx : Math.min(20, lines.length);
+  const searchEnd = tableHeaderIdx > 0 ? tableHeaderIdx : Math.min(25, lines.length);
+  
+  // Keypar-specific: CADASTRO + NOME labels on one line, values on a nearby line
+  // Pattern: "CADASTRO NOME" then "000009717 JOSE DE RIBAMAR BARTHOLOMEU BO 20/04/2015"
+  for (let i = 0; i < searchEnd; i++) {
+    const text = lines[i].text;
+    if (/CADASTRO/i.test(text) && /NOME/i.test(text)) {
+      // Scan next few lines for the data
+      for (let k = i + 1; k < Math.min(i + 5, searchEnd); k++) {
+        const dataText = lines[k].text.trim();
+        // Match: code (6+ digits) + name + date
+        const cadastroMatch = dataText.match(/^(\d{6,})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s.]+?)\s+(\d{2}\/\d{2}\/\d{4})/);
+        if (cadastroMatch) {
+          if (!result.codigo) result.codigo = cadastroMatch[1];
+          if (!result.nome) result.nome = cadastroMatch[2].trim();
+          if (!result.dataAdmissao) result.dataAdmissao = cadastroMatch[3];
+          break;
+        }
+      }
+      break;
+    }
+  }
+  
+  // Keypar-specific: CARGO + CBO labels on one line, values on nearby line
+  for (let i = 0; i < searchEnd; i++) {
+    const text = lines[i].text;
+    if (/\bCARGO\b/i.test(text) && /\bCBO\b/i.test(text)) {
+      for (let k = i + 1; k < Math.min(i + 4, searchEnd); k++) {
+        const dataText = lines[k].text.trim();
+        // Match: cargo name + CBO number (6 digits)
+        const cargoMatch = dataText.match(/^([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s.\/\-]+?)\s+(\d{6})$/);
+        if (cargoMatch) {
+          if (!result.cargo) result.cargo = cargoMatch[1].trim();
+          if (!result.cbo) result.cbo = cargoMatch[2];
+          break;
+        }
+      }
+    }
+  }
   
   for (let i = 0; i < searchEnd; i++) {
     const line = lines[i];
@@ -708,20 +803,39 @@ const parseEventLineByItems = (
   if (!descricao) return null;
   
   // Classify numeric values by column position
+  // When columns are too close (<80px), use code-based heuristic instead of position
+  const columnsClose = Math.abs(vencX - descX) < 80;
   let referencia = '';
   let vencimento = '0';
   let desconto = '0';
   
-  for (const ni of numericItems) {
-    const val = ni.str.trim();
-    const centerX = ni.x + ni.width / 2;
-    
-    if (refX !== null && Math.abs(centerX - refX) < Math.abs(centerX - vencX) && Math.abs(centerX - refX) < Math.abs(centerX - descX)) {
-      referencia = val;
-    } else {
-      const col = classifyValueColumn(centerX, vencX, descX);
-      if (col === 'vencimento') vencimento = val;
-      else desconto = val;
+  if (columnsClose) {
+    // Columns unreliable - use code-based heuristic
+    const isDesc = isDescontoByCode(codigo, descricao);
+    if (numericItems.length === 1) {
+      if (isDesc) desconto = numericItems[0].str.trim();
+      else vencimento = numericItems[0].str.trim();
+    } else if (numericItems.length === 2) {
+      referencia = numericItems[0].str.trim();
+      if (isDesc) desconto = numericItems[1].str.trim();
+      else vencimento = numericItems[1].str.trim();
+    } else if (numericItems.length >= 3) {
+      referencia = numericItems[0].str.trim();
+      vencimento = numericItems[1].str.trim();
+      desconto = numericItems[2].str.trim();
+    }
+  } else {
+    for (const ni of numericItems) {
+      const val = ni.str.trim();
+      const centerX = ni.x + ni.width / 2;
+      
+      if (refX !== null && Math.abs(centerX - refX) < Math.abs(centerX - vencX) && Math.abs(centerX - refX) < Math.abs(centerX - descX)) {
+        referencia = val;
+      } else {
+        const col = classifyValueColumn(centerX, vencX, descX);
+        if (col === 'vencimento') vencimento = val;
+        else desconto = val;
+      }
     }
   }
   
@@ -735,36 +849,45 @@ const parseEventLineByItems = (
  */
 const parseEventLineByTextFallback = (text: string): PayslipEvent | null => {
   // Match: code at start (with optional leading whitespace), then description, then monetary values at end
-  const match = text.trim().match(/^(\d{3,4})\s+(.+?)(?:\s+([\d.,]+(?:\s+[\d.,]+){0,2}))\s*$/);
-  if (!match) return null;
+  // Description can contain special chars: parentheses, /, %, c/, 1/3, dots
+  const trimmed = text.trim();
+  const match = trimmed.match(/^(\d{3,4})\s+(.+?)(?:\s+([\d.,]+(?:\s+[\d.,]+){0,2}))\s*$/);
+  if (!match) {
+    // Try matching lines with only code + description + single value (no ref)
+    const simpleMatch = trimmed.match(/^(\d{3,4})\s+(.+?)\s+([\d.,]+)\s*$/);
+    if (!simpleMatch) return null;
+    const codigo = simpleMatch[1];
+    const descricao = simpleMatch[2].replace(/\s+/g, ' ').trim();
+    if (/Sal[aá]rio|Base\s+FGTS|Base\s+INSS|Total|L[ií]quido|Composi[cç]|Faixa|SALÁRIO/i.test(descricao)) return null;
+    const val = simpleMatch[3];
+    const isDesc = isDescontoByCode(codigo, descricao);
+    return { codigo, descricao, referencia: '', vencimento: isDesc ? '0' : val, desconto: isDesc ? val : '0' };
+  }
   
   const codigo = match[1];
   const descricao = match[2].replace(/\s+/g, ' ').trim();
   const valuesStr = match[3];
   
   // Don't parse lines where "description" looks like footer labels
-  if (/Sal[aá]rio|Base\s+FGTS|Base\s+INSS|Total|L[ií]quido|Composi[cç]/i.test(descricao)) return null;
+  if (/Sal[aá]rio|Base\s+FGTS|Base\s+INSS|Total|L[ií]quido|Composi[cç]|Faixa|SALÁRIO/i.test(descricao)) return null;
   
-  // Extract monetary values (right to left: desconto, vencimento, referência)
+  // Extract monetary values
   const values = valuesStr.match(/[\d.,]+/g) || [];
+  const isDesc = isDescontoByCode(codigo, descricao);
   
   let referencia = '';
   let vencimento = '0';
   let desconto = '0';
   
   if (values.length === 1) {
-    // Single value = vencimento
-    vencimento = values[0];
+    // Single value: classify by code
+    if (isDesc) desconto = values[0];
+    else vencimento = values[0];
   } else if (values.length === 2) {
-    // Two values: could be ref+venc, or venc+desc
-    // Heuristic: if first value has no comma or is small integer-like, it's referência
-    if (!values[0].includes(',') || /^\d{1,3}$/.test(values[0].replace(/\./g, ''))) {
-      referencia = values[0];
-      vencimento = values[1];
-    } else {
-      vencimento = values[0];
-      desconto = values[1];
-    }
+    // Two values: first is referência, second is venc or desc based on code
+    referencia = values[0];
+    if (isDesc) desconto = values[1];
+    else vencimento = values[1];
   } else if (values.length >= 3) {
     referencia = values[0];
     vencimento = values[1];
@@ -839,9 +962,13 @@ const extractEvents = (lines: LayoutLine[]): {
     // Stop at footer labels
     if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !/Evento|Discrimina|Descri/i.test(text)) break;
     if (/Sal\.\s*Contr/i.test(text)) break;
-    if (/Base\s+para\s+FGTS/i.test(text)) break;
+    if (/SAL[AÁ]RIO\s+CONTR/i.test(text)) break;
+    if (/Base\s+(?:para\s+|C[aá]lc\.?\s*)?FGTS/i.test(text)) break;
     if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text)) break;
     if (/Local\s+do\s+Pagamento/i.test(text)) break;
+    if (/Assinado\s+eletronicamente/i.test(text)) break;
+    if (/Fls\.?\s*:/i.test(text)) break;
+    if (/Parab[eé]ns/i.test(text)) continue; // Skip birthday messages inside events
     
     // Try to extract period from "Mês/Ano" column (e.g. "8 / 2020" or "03 / 2019")
     if (!period) {
@@ -1013,8 +1140,16 @@ const extractFooter = (lines: LayoutLine[]): {
     }
     
     // Style C: individual/grouped labels with positional value matching
+    // Also handles Keypar-style where each label is on its own line with value on next line
     if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !result.salarioBase) {
-      result.salarioBase = getAlignedValue(lines, i, /Sal[aá]rio/i);
+      result.salarioBase = getAlignedValue(lines, i, /Sal[aá]rio\s*(Base|Fixo)/i);
+      if (!result.salarioBase) {
+        // Try next line for just a numeric value
+        if (i + 1 < lines.length) {
+          const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+          if (nextVals.length > 0) result.salarioBase = nextVals[0].str.trim();
+        }
+      }
     }
     if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text) && !result.salarioBase) {
       for (let k = i + 1; k < Math.min(i + 3, lines.length); k++) {
@@ -1024,35 +1159,65 @@ const extractFooter = (lines: LayoutLine[]): {
         }
       }
     }
-    if (/Base\s+(?:para\s+)?FGTS/i.test(text) && !result.baseFgts) {
-      result.baseFgts = getAlignedValue(lines, i, /^Base/i);
-    }
-    if (/FGTS\s+do\s+m[eê]s/i.test(text) && !result.fgtsMes) {
-      result.fgtsMes = getAlignedValue(lines, i, /FGTS\s+do/i);
-    }
-    if (/Base\s+(Cal\.?\s*)?IRRF/i.test(text) && !result.baseIrrf) {
-      result.baseIrrf = getAlignedValue(lines, i, /Base.*IRRF/i);
-      if (!result.baseIrrf) {
-        result.baseIrrf = getAlignedValue(lines, i, /^Base/i);
+    if (/Base\s+(?:para\s+|C[aá]lc\.?\s*)?FGTS/i.test(text) && !result.baseFgts) {
+      result.baseFgts = getAlignedValue(lines, i, /Base/i);
+      if (!result.baseFgts && i + 1 < lines.length) {
+        const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nextVals.length > 0) result.baseFgts = nextVals[0].str.trim();
       }
     }
-    if (/Sal\.?\s*Cont?\.?\s*INSS/i.test(text) && !result.salarioContrInss) {
+    if (/FGTS\s+(?:do\s+)?m[eê]s/i.test(text) && !result.fgtsMes) {
+      result.fgtsMes = getAlignedValue(lines, i, /FGTS/i);
+      if (!result.fgtsMes && i + 1 < lines.length) {
+        const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nextVals.length > 0) result.fgtsMes = nextVals[0].str.trim();
+      }
+    }
+    if (/Base\s+(?:Cal\.?\s*|C[aá]lculo?\s*)?IRRF/i.test(text) && !result.baseIrrf) {
+      result.baseIrrf = getAlignedValue(lines, i, /Base.*IRRF/i);
+      if (!result.baseIrrf) result.baseIrrf = getAlignedValue(lines, i, /^Base/i);
+      if (!result.baseIrrf && i + 1 < lines.length) {
+        const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nextVals.length > 0) result.baseIrrf = nextVals[0].str.trim();
+      }
+    }
+    if ((/Sal[aá]rio\s+Contr\.?\s*INSS/i.test(text) || /Sal\.?\s*Cont?\.?\s*INSS/i.test(text)) && !result.salarioContrInss) {
       result.salarioContrInss = getAlignedValue(lines, i, /^Sal/i);
+      if (!result.salarioContrInss && i + 1 < lines.length) {
+        const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nextVals.length > 0) result.salarioContrInss = nextVals[0].str.trim();
+      }
     }
     if (/Base\s+INSS/i.test(text) && !result.baseInss) {
       result.baseInss = getAlignedValue(lines, i, /Base.*INSS/i);
     }
     if (/Faixa\s+IRRF/i.test(text) && !result.faixaIrrf) {
       result.faixaIrrf = getAlignedValue(lines, i, /Faixa/i);
+      if (!result.faixaIrrf && i + 1 < lines.length) {
+        const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nextVals.length > 0) result.faixaIrrf = nextVals[0].str.trim();
+      }
     }
     if (/Total\s+de\s+Vencimentos/i.test(text) && !result.totalVencimentos) {
       result.totalVencimentos = getAlignedValue(lines, i, /Total\s+de\s+Vencimentos/i);
+      if (!result.totalVencimentos && i + 1 < lines.length) {
+        const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nextVals.length > 0) result.totalVencimentos = nextVals[0].str.trim();
+      }
     }
     if (/Total\s+de\s+Descontos/i.test(text) && !result.totalDescontos) {
       result.totalDescontos = getAlignedValue(lines, i, /Total\s+de\s+Descontos/i);
+      if (!result.totalDescontos && i + 1 < lines.length) {
+        const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nextVals.length > 0) result.totalDescontos = nextVals[0].str.trim();
+      }
     }
     if (/Valor\s+L[ií]quido/i.test(text) && !result.valorLiquido) {
       result.valorLiquido = getAlignedValue(lines, i, /Valor\s+L[ií]quido/i);
+      if (!result.valorLiquido && i + 1 < lines.length) {
+        const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nextVals.length > 0) result.valorLiquido = nextVals[0].str.trim();
+      }
     }
   }
   
@@ -1447,6 +1612,7 @@ export const extractPattern1aPage = (items: TextItem[]): {
   // Add header fields
   addIfNew('Empresa', header.empresa);
   addIfNew('CNPJ', header.cnpj);
+  addIfNew('Local', header.local);
   addIfNew('Centro de Custo', header.centroCusto);
   addIfNew('Tipo de Folha', header.tipoFolha);
   addIfNew('Competência', header.competencia);
