@@ -392,7 +392,7 @@ const extractEmployee = (lines: LayoutLine[]): {
       for (let k = i + 1; k < Math.min(i + 5, searchEnd); k++) {
         const dataText = lines[k].text.trim();
         // Match: code (6+ digits) + name + date
-        const cadastroMatch = dataText.match(/^(\d{6,})\s+([A-ZÀ-Ú][A-ZÀ-Ú\s.]+?)\s+(\d{2}\/\d{2}\/\d{4})/);
+        const cadastroMatch = dataText.match(/^(\d{4,})\s+([A-ZÀ-Úa-zà-ú][A-ZÀ-Úa-zà-ú\s.]+?)\s+(\d{2}\/\d{2}\/\d{4})/);
         if (cadastroMatch) {
           if (!result.codigo) result.codigo = cadastroMatch[1];
           if (!result.nome) result.nome = cadastroMatch[2].trim();

@@ -21,6 +21,104 @@ interface ValidationViewProps {
   onUpdate: (data: ExtractedData) => void;
 }
 
+/** Sub-component for Add Field dialog content */
+const AddFieldContent: React.FC<{
+  allKeys: string[];
+  allValues: string[];
+  onAdd: (key: string, value: string) => void;
+  onCancel: () => void;
+}> = ({ allKeys, allValues, onAdd, onCancel }) => {
+  const [search, setSearch] = useState('');
+  const [selectedKey, setSelectedKey] = useState('');
+  const [selectedValue, setSelectedValue] = useState('');
+
+  // Merge all keys and values into a single list of available items
+  const allItems = useMemo(() => {
+    const items: { text: string; type: 'key' | 'value' }[] = [];
+    const seen = new Set<string>();
+    for (const k of allKeys) {
+      if (!seen.has(k)) { seen.add(k); items.push({ text: k, type: 'key' }); }
+    }
+    for (const v of allValues) {
+      if (!seen.has(v)) { seen.add(v); items.push({ text: v, type: 'value' }); }
+    }
+    return items;
+  }, [allKeys, allValues]);
+
+  const filtered = useMemo(() => {
+    if (!search) return allItems;
+    const lower = search.toLowerCase();
+    return allItems.filter(i => i.text.toLowerCase().includes(lower));
+  }, [allItems, search]);
+
+  return (
+    <div className="space-y-3">
+      <Input
+        placeholder="Buscar título ou valor..."
+        value={search}
+        onChange={e => setSearch(e.target.value)}
+        autoFocus
+      />
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1">
+          <Label className="text-xs">Título</Label>
+          <SearchableFieldSelect
+            value={selectedKey}
+            options={allKeys}
+            onSelect={setSelectedKey}
+            placeholder="Selecionar título..."
+          />
+        </div>
+        <div className="space-y-1">
+          <Label className="text-xs">Valor</Label>
+          <SearchableFieldSelect
+            value={selectedValue}
+            options={allValues}
+            onSelect={setSelectedValue}
+            placeholder="Selecionar valor..."
+          />
+        </div>
+      </div>
+
+      {search && (
+        <ScrollArea className="h-48 border rounded-md">
+          <div className="p-2 space-y-1">
+            {filtered.map((item, idx) => (
+              <button
+                key={idx}
+                className="w-full text-left px-2 py-1.5 text-xs rounded hover:bg-accent transition-colors flex items-center justify-between"
+                onClick={() => {
+                  if (item.type === 'key') setSelectedKey(item.text);
+                  else setSelectedValue(item.text);
+                }}
+              >
+                <span className="truncate">{item.text}</span>
+                <Badge variant="outline" className="text-[9px] px-1 py-0 ml-2 flex-shrink-0">
+                  {item.type === 'key' ? 'título' : 'valor'}
+                </Badge>
+              </button>
+            ))}
+            {filtered.length === 0 && (
+              <p className="text-xs text-muted-foreground text-center py-4">Nenhum resultado</p>
+            )}
+          </div>
+        </ScrollArea>
+      )}
+
+      <DialogFooter>
+        <Button variant="outline" onClick={onCancel}>Cancelar</Button>
+        <Button
+          onClick={() => onAdd(selectedKey || search, selectedValue || search)}
+          disabled={!selectedKey && !selectedValue && !search}
+        >
+          <Plus className="h-4 w-4 mr-1" /> Adicionar
+        </Button>
+      </DialogFooter>
+    </div>
+  );
+};
+
+
 interface FieldState {
   id: string;
   /** The original key from extraction */
@@ -54,6 +152,7 @@ interface EventState {
 const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
   const { toast } = useToast();
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
+  const [addFieldDialogOpen, setAddFieldDialogOpen] = useState(false);
   const [templateName, setTemplateName] = useState('');
   const [templates, setTemplates] = useState<ExtractionTemplate[]>(() => getTemplates());
   const [groupMode, setGroupMode] = useState(false);
@@ -316,6 +415,35 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     });
   };
 
+  const deleteField = useCallback((id: string) => {
+    setFields(prev => {
+      const field = prev.find(f => f.id === id);
+      if (!field) return prev;
+      // If deleting a parent, ungroup its children first
+      const childIds = field.children || [];
+      return prev
+        .filter(f => f.id !== id)
+        .map(f => childIds.includes(f.id) ? { ...f, parentId: undefined } : f);
+    });
+    toast({ title: 'Campo excluído' });
+  }, [toast]);
+
+  const addNewField = useCallback((key: string, value: string) => {
+    const newId = `custom-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const newField: FieldState = {
+      id: newId,
+      originalKey: key,
+      assignedKey: key,
+      sampleValue: value,
+      valueSource: 'custom',
+      customValue: value,
+      status: 'pending',
+    };
+    setFields(prev => [...prev, newField]);
+    setAddFieldDialogOpen(false);
+    toast({ title: 'Campo adicionado!' });
+  }, [toast]);
+
   // Apply changes: per-month value resolution
   const applyToData = (): ExtractedData => {
     const updatedMonths = data.months.map(month => {
@@ -347,7 +475,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
               return orig?.value || c.sampleValue;
             }).filter(Boolean);
             if (childValues.length > 0) {
-              value = [value, ...childValues].filter(Boolean).join(', ');
+              value = [value, ...childValues].filter(Boolean).join('\n');
             }
           }
 
@@ -593,6 +721,15 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
                 Desagrupar
               </Button>
             )}
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-7 text-xs gap-1 text-destructive hover:text-destructive"
+              onClick={() => deleteField(field.id)}
+            >
+              <Trash2 className="h-3 w-3" />
+              Excluir
+            </Button>
           </div>
 
           {/* Render children */}
@@ -684,9 +821,14 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
           ) : (
             <>
               {activeTab === 'fields' && (
-                <Button variant="outline" size="sm" onClick={() => setGroupMode(true)}>
-                  <GripVertical className="h-4 w-4 mr-1" /> Agrupar Campos
-                </Button>
+                <>
+                  <Button variant="outline" size="sm" onClick={() => setGroupMode(true)}>
+                    <GripVertical className="h-4 w-4 mr-1" /> Agrupar Campos
+                  </Button>
+                  <Button variant="outline" size="sm" onClick={() => setAddFieldDialogOpen(true)}>
+                    <Plus className="h-4 w-4 mr-1" /> Adicionar Campo
+                  </Button>
+                </>
               )}
               <Button variant="outline" size="sm" onClick={() => setSaveDialogOpen(true)}>
                 <BookTemplate className="h-4 w-4 mr-1" /> Salvar como Modelo
@@ -905,6 +1047,24 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
               <Save className="h-4 w-4 mr-1" /> Salvar
             </Button>
           </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Add Field Dialog */}
+      <Dialog open={addFieldDialogOpen} onOpenChange={setAddFieldDialogOpen}>
+        <DialogContent className="max-w-lg max-h-[80vh]">
+          <DialogHeader>
+            <DialogTitle>Adicionar Campo</DialogTitle>
+            <DialogDescription>
+              Selecione um título e valor extraídos do documento para criar um novo campo.
+            </DialogDescription>
+          </DialogHeader>
+          <AddFieldContent
+            allKeys={allKeys}
+            allValues={allValues}
+            onAdd={addNewField}
+            onCancel={() => setAddFieldDialogOpen(false)}
+          />
         </DialogContent>
       </Dialog>
     </div>
