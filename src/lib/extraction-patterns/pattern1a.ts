@@ -281,25 +281,36 @@ const extractHeader = (lines: LayoutLine[]): {
       }
       
       // "MÊS/ANO" label with month and year on separate nearby lines
-      // Keypar: line "MÊS/ANO", then "/ 2019" on one line, "03" on another, etc.
+      // Keypar rotated: items "03", "/", "2019" at similar X but different Y,
+      // which means they appear on different "lines" and may be before OR after MÊS/ANO line
       if (!result.period && /M[eêÊ]S\s*\/\s*ANO/i.test(text)) {
         let foundMonth = '';
         let foundYear = '';
-        // Scan nearby lines (up to 8 ahead) for month digit and year
-        for (let k = i; k < Math.min(i + 8, headerEnd); k++) {
+        // Scan nearby lines in BOTH directions (up to 8 before and 8 ahead)
+        const scanStart = Math.max(0, i - 8);
+        const scanEnd = Math.min(i + 8, headerEnd);
+        for (let k = scanStart; k < scanEnd; k++) {
           const nearText = lines[k].text.trim();
           // Look for "/ YYYY" pattern
           if (!foundYear) {
             const yearMatch = nearText.match(/\/\s*(\d{4})/);
             if (yearMatch) foundYear = yearMatch[1];
           }
+          // Look for standalone year (e.g., "2019" on its own line)
+          if (!foundYear) {
+            for (const item of lines[k].items) {
+              const trimmed = item.str.trim();
+              if (/^\d{4}$/.test(trimmed) && parseInt(trimmed) >= 2000 && parseInt(trimmed) <= 2099) {
+                foundYear = trimmed;
+                break;
+              }
+            }
+          }
           // Look for standalone month digit (1-12)
           if (!foundMonth) {
-            // Check items individually for standalone month digits
             for (const item of lines[k].items) {
               const trimmed = item.str.trim();
               if (/^\d{1,2}$/.test(trimmed) && parseInt(trimmed) >= 1 && parseInt(trimmed) <= 12) {
-                // Make sure this isn't part of a date or year
                 foundMonth = trimmed;
                 break;
               }
@@ -315,12 +326,18 @@ const extractHeader = (lines: LayoutLine[]): {
       
       // Standalone MM/YYYY in header (with optional spaces: "03 / 2019" or "03/2019")
       // But avoid capturing dates from judicial protocol headers (first line)
+      // Also skip dates that look like admission dates (DD/MM/YYYY where DD > 12)
       if (!result.period && i > 0) {
         const standaloneMatch = text.match(/\b(\d{1,2})\s*\/\s*(\d{4})\b/);
         if (standaloneMatch) {
-          const m = standaloneMatch[1].padStart(2, '0');
-          result.period = `${m}/${standaloneMatch[2]}`;
-          if (!result.competencia) result.competencia = `${m}/${standaloneMatch[2]}`;
+          const monthNum = parseInt(standaloneMatch[1]);
+          // Only accept as period if it looks like MM/YYYY (month 1-12)
+          // and the surrounding text doesn't look like a date (DD/MM/YYYY)
+          if (monthNum >= 1 && monthNum <= 12 && !/\d{2}\/\d{2}\/\d{4}/.test(text)) {
+            const m = standaloneMatch[1].padStart(2, '0');
+            result.period = `${m}/${standaloneMatch[2]}`;
+            if (!result.competencia) result.competencia = `${m}/${standaloneMatch[2]}`;
+          }
         }
       }
     }
@@ -1577,6 +1594,132 @@ const extractAllFields = (
 
 // ======== Main entry points ========
 
+/**
+ * Detect a rotated/landscape table layout where column headers (CÓD., DESCRIÇÃO,
+ * REFERÊNCIA, VENCIMENTOS, DESCONTOS) share the same X position but have different
+ * Y positions, and event data is grouped by X coordinate.
+ */
+const extractEventsRotated = (allItems: TextItem[]): {
+  eventos: PayslipEvent[];
+  headerYPositions: { codY: number; descY: number; refY: number; vencY: number; desctoY: number } | null;
+} => {
+  // Find column headers at the same X position
+  const codItem = allItems.find(it => /^C[OÓ]D\.?$/i.test(it.str.trim()));
+  const descItem = allItems.find(it => /^DESCRI[CÇ][AÃ]O$/i.test(it.str.trim()));
+  const refItem = allItems.find(it => /^REFER[EÊ]NCIA$/i.test(it.str.trim()));
+  const vencItem = allItems.find(it => /^VENCIMENTOS$/i.test(it.str.trim()));
+  const desctoItem = allItems.find(it => /^DESCONTOS$/i.test(it.str.trim()));
+
+  if (!codItem || !descItem || !vencItem || !desctoItem) {
+    return { eventos: [], headerYPositions: null };
+  }
+
+  // Check if headers share similar X (within 10px) = rotated layout
+  const headerX = codItem.x;
+  const allHeadersSameX = [descItem, vencItem, desctoItem].every(it => Math.abs(it.x - headerX) < 15);
+  if (!allHeadersSameX) {
+    return { eventos: [], headerYPositions: null };
+  }
+
+  const codY = codItem.y;
+  const descY = descItem.y;
+  const refY = refItem?.y ?? 0;
+  const vencY = vencItem.y;
+  const desctoY = desctoItem.y;
+
+  // Group all items by X position (tolerance 3px)
+  const xGroups = new Map<number, TextItem[]>();
+  for (const it of allItems) {
+    let foundGroup = false;
+    for (const [groupX, items] of xGroups) {
+      if (Math.abs(it.x - groupX) < 3) {
+        items.push(it);
+        foundGroup = true;
+        break;
+      }
+    }
+    if (!foundGroup) {
+      xGroups.set(it.x, [it]);
+    }
+  }
+
+  // Define Y zones between headers. In PDF coords, Y increases upward.
+  // Headers sorted by Y ascending: codY < descY < refY < vencY < desctoY
+  // Values for a field fall between that header's Y and the next header's Y.
+  const sortedHeaders = [
+    { name: 'code', y: codY },
+    { name: 'desc', y: descY },
+    { name: 'ref', y: refY },
+    { name: 'venc', y: vencY },
+    { name: 'descto', y: desctoY },
+  ].filter(h => h.y > 0).sort((a, b) => a.y - b.y);
+
+  // Classify a Y coordinate into the nearest header zone
+  const classifyY = (y: number): string => {
+    let closest = sortedHeaders[0];
+    let minDist = Infinity;
+    for (const h of sortedHeaders) {
+      const dist = Math.abs(y - h.y);
+      if (dist < minDist) {
+        minDist = dist;
+        closest = h;
+      }
+    }
+    return closest.name;
+  };
+
+  // Find X groups that contain event codes
+  const eventos: PayslipEvent[] = [];
+
+  for (const [groupX, items] of xGroups) {
+    // Skip the header column itself
+    if (Math.abs(groupX - headerX) < 5) continue;
+    // Skip columns far to the right (footer labels like SALÁRIO BASE, etc.)
+    if (groupX > headerX + 300) continue;
+
+    // Classify each item in this X group by zone
+    const byZone: Record<string, TextItem[]> = {};
+    for (const it of items) {
+      const zone = classifyY(it.y);
+      if (!byZone[zone]) byZone[zone] = [];
+      byZone[zone].push(it);
+    }
+
+    // Find code
+    const codeItems = (byZone['code'] || []).filter(it => /^\d{3,4}$/.test(it.str.trim()));
+    if (codeItems.length === 0) continue;
+    const codigo = codeItems[0].str.trim();
+
+    // Find description
+    const descItems = (byZone['desc'] || []).filter(it => !/^\d+$/.test(it.str.trim()));
+    const descricao = descItems[0]?.str.trim() || '';
+    if (!descricao) continue;
+
+    // Find referência
+    const refItems = (byZone['ref'] || []).filter(it => /^[\d.,]+$/.test(it.str.trim()));
+    const referencia = refItems[0]?.str.trim() || '';
+
+    // Find vencimento
+    const vencItems = (byZone['venc'] || []).filter(it => /^[\d.,]+$/.test(it.str.trim()));
+    const vencimento = vencItems[0]?.str.trim() || '0';
+
+    // Find desconto
+    const desctoItems = (byZone['descto'] || []).filter(it => /^[\d.,]+$/.test(it.str.trim()));
+    const desconto = desctoItems[0]?.str.trim() || '0';
+
+    eventos.push({ codigo, descricao, referencia, vencimento, desconto });
+  }
+
+  // Sort events by their X position (visual order in rotated layout)
+  eventos.sort((a, b) => {
+    const aCode = parseInt(a.codigo);
+    const bCode = parseInt(b.codigo);
+    return aCode - bCode;
+  });
+
+  return { eventos, headerYPositions: { codY, descY, refY, vencY, desctoY } };
+};
+
 export const extractPattern1aPage = (items: TextItem[]): {
   month: ExtractedMonth;
   employeeName: string;
@@ -1590,8 +1733,17 @@ export const extractPattern1aPage = (items: TextItem[]): {
   const footer = extractFooter(lines);
   const bank = extractBankInfo(lines);
 
-  // Extract events (structured table)
-  const { eventos, totalVencimentos, totalDescontos, valorLiquido, period: eventPeriod, headerIdx, endIdx } = extractEvents(lines);
+  // Extract events (structured table) - try standard first
+  let { eventos, totalVencimentos, totalDescontos, valorLiquido, period: eventPeriod, headerIdx, endIdx } = extractEvents(lines);
+
+  // If standard extraction found no events, try rotated layout
+  if (eventos.length === 0) {
+    const rotated = extractEventsRotated(items);
+    if (rotated.eventos.length > 0) {
+      eventos = rotated.eventos;
+      // headerIdx/endIdx stay -1 so extractAllFields scans all lines
+    }
+  }
 
   // Extract ALL label-value pairs dynamically (truly generic)
   const dynamicFields = extractAllFields(lines, headerIdx, endIdx);

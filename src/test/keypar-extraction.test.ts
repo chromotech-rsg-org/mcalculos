@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, it, expect } from 'vitest';
 import * as pdfjsLib from 'pdfjs-dist';
 import { extractTextItems, groupIntoLines } from '@/lib/extraction-patterns/pdf-layout';
@@ -5,8 +6,8 @@ import { extractPattern1a } from '@/lib/extraction-patterns/pattern1a';
 import fs from 'fs';
 import path from 'path';
 
-// Configure PDF.js worker for Node
-pdfjsLib.GlobalWorkerOptions.workerSrc = '';
+// Configure PDF.js worker for Node - use fake worker
+pdfjsLib.GlobalWorkerOptions.workerSrc = 'pdfjs-dist/build/pdf.worker.min.mjs';
 
 describe('Keypar PDF Extraction', () => {
   it('should correctly extract events from Keypar payslip PDF', async () => {
