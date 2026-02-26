@@ -357,11 +357,13 @@ const extractEmployee = (lines: LayoutLine[]): {
   filial: string; cargo: string; dataAdmissao: string;
   endereco: string; bairro: string; cidade: string; cep: string; uf: string;
   pis: string; cpf: string; identidade: string; dataCredito: string; depSalFam: string;
+  depIR: string; depSF: string;
 } => {
   const result = {
     codigo: '', nome: '', cbo: '', departamento: '', filial: '',
     cargo: '', dataAdmissao: '', endereco: '', bairro: '', cidade: '',
     cep: '', uf: '', pis: '', cpf: '', identidade: '', dataCredito: '', depSalFam: '',
+    depIR: '', depSF: '',
   };
 
   // Find the table header line to know where employee zone ends
@@ -600,6 +602,48 @@ const extractEmployee = (lines: LayoutLine[]): {
     if (!result.depSalFam) {
       const depMatch = text.match(/Dep\.?\s*sal\.?\s*f[aá]m\.?[:\s]*(\d+)/i);
       if (depMatch) result.depSalFam = depMatch[1];
+    }
+    
+    // Dep IR (Dependentes IR)
+    if (!result.depIR) {
+      const depIRMatch = text.match(/Dep\.?\s*IR[:\s]*(\d+)/i);
+      if (depIRMatch) result.depIR = depIRMatch[1];
+      // Item-based: "Dep" + "IR" label then value
+      if (!result.depIR) {
+        for (let j = 0; j < items.length; j++) {
+          const s = items[j].str.trim();
+          if (/^Dep\.?\s*IR$/i.test(s) || (/^Dep\.?$/i.test(s) && j + 1 < items.length && /^IR$/i.test(items[j + 1].str.trim()))) {
+            const startK = /^Dep\.?\s*IR$/i.test(s) ? j + 1 : j + 2;
+            for (let k = startK; k < items.length; k++) {
+              const val = items[k].str.trim();
+              if (/^\d+$/.test(val)) { result.depIR = val; break; }
+              if (val && !/^[:=]$/.test(val)) break;
+            }
+            break;
+          }
+        }
+      }
+    }
+    
+    // Dep SF (Dependentes Salário Família)
+    if (!result.depSF) {
+      const depSFMatch = text.match(/Dep\.?\s*SF[:\s]*(\d+)/i);
+      if (depSFMatch) result.depSF = depSFMatch[1];
+      // Item-based
+      if (!result.depSF) {
+        for (let j = 0; j < items.length; j++) {
+          const s = items[j].str.trim();
+          if (/^Dep\.?\s*SF$/i.test(s) || (/^Dep\.?$/i.test(s) && j + 1 < items.length && /^SF$/i.test(items[j + 1].str.trim()))) {
+            const startK = /^Dep\.?\s*SF$/i.test(s) ? j + 1 : j + 2;
+            for (let k = startK; k < items.length; k++) {
+              const val = items[k].str.trim();
+              if (/^\d+$/.test(val)) { result.depSF = val; break; }
+              if (val && !/^[:=]$/.test(val)) break;
+            }
+            break;
+          }
+        }
+      }
     }
     
     // === Strategy 2: Positional (code + name + CBO on same line) ===
@@ -1448,11 +1492,12 @@ const extractAllFields = (
   /** Known labels that can have TEXT values (not just numbers) */
   const TEXT_VALUE_LABELS = [
     /^Empresa$/i, /^Nome$/i, /^Nome\s+do\s+Funcion[aá]rio$/i,
-    /^Matr[ií]cula$/i, /^Mat\.?$/i, /^Registro$/i,
+    /^Matr[ií]cula$/i, /^Mat\.?$/i, /^Registro$/i, /^Cadastro$/i,
     /^Fun[cç][aã]o$/i, /^Cargo$/i, /^Bairro$/i, /^Cidade$/i, /^UF$/i,
     /^Endere[cç]o$/i, /^Departamento$/i, /^Se[cç][aã]o$/i,
     /^Local\s+do\s+Pagamento$/i, /^Folha$/i, /^Tipo\s+Folha$/i, /^Filial$/i,
     /^Banco$/i, /^CC$/i, /^Centro\s+(?:de\s+)?Custo$/i,
+    /^Dep\.?\s*IR$/i, /^Dep\.?\s*SF$/i,
   ];
 
   const isTextValueLabel = (s: string): boolean => {
@@ -1788,6 +1833,8 @@ export const extractPattern1aPage = (items: TextItem[]): {
   addIfNew('Identidade', employee.identidade);
   addIfNew('Data Crédito', employee.dataCredito);
   addIfNew('Dep. Sal. Fam.', employee.depSalFam);
+  addIfNew('Dep IR', employee.depIR);
+  addIfNew('Dep SF', employee.depSF);
 
   // Add footer fields
   addIfNew('Salário Base', footer.salarioBase);
