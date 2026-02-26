@@ -96,6 +96,7 @@ export interface FieldMapping {
   mappedKey: string;
   ignore: boolean;
   validated: boolean;
+  parentKey?: string;
 }
 
 export interface ExtractionTemplate {

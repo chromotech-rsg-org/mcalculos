@@ -292,11 +292,14 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     const parentId = selectedForGroup[0];
     const childIds = selectedForGroup.slice(1);
     setFields(prev => prev.map(f => {
-      if (f.id === parentId) return { ...f, children: [...(f.children || []), ...childIds] };
+      if (f.id === parentId) {
+        // Parent keeps its title; children will contribute only values
+        return { ...f, children: [...(f.children || []), ...childIds] };
+      }
       if (childIds.includes(f.id)) return { ...f, parentId };
       return f;
     }));
-    toast({ title: 'Grupo criado!' });
+    toast({ title: 'Grupo criado! O título do pai será mantido, apenas os valores dos filhos serão agrupados.' });
     setSelectedForGroup([]);
     setGroupMode(false);
   };
@@ -318,21 +321,36 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     const updatedMonths = data.months.map(month => {
       // Build updated fields for this month
       const updatedFields = fields
-        .filter(f => f.status !== 'ignored')
+        .filter(f => f.status !== 'ignored' && !f.parentId) // Only top-level fields
         .map(f => {
           let value: string;
           if (f.valueSource === 'custom' && f.customValue !== undefined) {
-            // Custom typed → same for all months
             value = f.customValue;
           } else if (f.valueSource === 'mapped' && f.mappedToKey) {
-            // Mapped → use the source key's value for THIS month
             const sourceField = month.fields?.find(mf => mf.key === f.mappedToKey);
             value = sourceField?.value || f.sampleValue;
           } else {
-            // Original → keep this month's own value
             const originalField = month.fields?.find(mf => mf.key === f.originalKey);
             value = originalField?.value || f.sampleValue;
           }
+
+          // If this field has children, concatenate their values
+          const children = fields.filter(c => c.parentId === f.id && c.status !== 'ignored');
+          if (children.length > 0) {
+            const childValues = children.map(c => {
+              if (c.valueSource === 'custom' && c.customValue !== undefined) return c.customValue;
+              if (c.valueSource === 'mapped' && c.mappedToKey) {
+                const src = month.fields?.find(mf => mf.key === c.mappedToKey);
+                return src?.value || c.sampleValue;
+              }
+              const orig = month.fields?.find(mf => mf.key === c.originalKey);
+              return orig?.value || c.sampleValue;
+            }).filter(Boolean);
+            if (childValues.length > 0) {
+              value = [value, ...childValues].filter(Boolean).join(', ');
+            }
+          }
+
           return { key: f.assignedKey, value };
         });
 
@@ -346,8 +364,6 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
           const evId = `${ev.codigo}-${ev.descricao}`;
           const state = events.find(e => e.id === evId);
           if (state) {
-            // Only apply structural changes (description rename, code);
-            // preserve this month's own monetary values
             return {
               codigo: state.codigo,
               descricao: state.descricao,
@@ -377,6 +393,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
       mappedKey: f.assignedKey,
       ignore: f.status === 'ignored',
       validated: f.status === 'validated',
+      parentKey: f.parentId ? fields.find(p => p.id === f.parentId)?.originalKey : undefined,
     }));
     const template: ExtractionTemplate = {
       id: generateId(),
@@ -390,20 +407,46 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     setSaveDialogOpen(false);
     setTemplateName('');
     handleApplyChanges();
-    toast({ title: 'Modelo salvo!' });
+    toast({ title: 'Modelo salvo com agrupamentos!' });
   };
 
   const handleApplyTemplate = (templateId: string) => {
     const tmpl = templates.find(t => t.id === templateId);
     if (!tmpl) return;
-    setFields(prev => prev.map(f => {
-      const mapping = tmpl.fieldMappings.find(m => m.originalKey === f.originalKey);
-      if (mapping) {
-        return { ...f, assignedKey: mapping.mappedKey, status: mapping.ignore ? 'ignored' : mapping.validated ? 'validated' : 'pending' };
+    setFields(prev => {
+      // First pass: apply mappings and status
+      let updated = prev.map(f => {
+        const mapping = tmpl.fieldMappings.find(m => m.originalKey === f.originalKey);
+        if (mapping) {
+          return {
+            ...f,
+            assignedKey: mapping.mappedKey,
+            status: mapping.ignore ? 'ignored' as const : mapping.validated ? 'validated' as const : 'pending' as const,
+            parentId: undefined,
+            children: undefined,
+          };
+        }
+        return { ...f, parentId: undefined, children: undefined };
+      });
+      
+      // Second pass: restore groupings from template
+      for (const mapping of tmpl.fieldMappings) {
+        if (mapping.parentKey) {
+          const childField = updated.find(f => f.originalKey === mapping.originalKey);
+          const parentField = updated.find(f => f.originalKey === mapping.parentKey);
+          if (childField && parentField) {
+            childField.parentId = parentField.id;
+            if (!parentField.children) parentField.children = [];
+            if (!parentField.children.includes(childField.id)) {
+              parentField.children.push(childField.id);
+            }
+          }
+        }
       }
-      return f;
-    }));
-    toast({ title: 'Modelo aplicado!' });
+      
+      return updated;
+    });
+    toast({ title: 'Modelo aplicado com agrupamentos!' });
   };
 
   const handleDeleteTemplate = (templateId: string) => {
