@@ -13,7 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useToast } from '@/hooks/use-toast';
 import { ExtractedData, FieldMapping, ExtractionTemplate, PayslipEvent } from '@/types';
-import { getTemplates, saveTemplate, deleteTemplate, generateId } from '@/lib/storage';
+import { getTemplates, saveTemplate, deleteTemplate, generateId } from '@/lib/supabase-storage';
 import SearchableFieldSelect from './SearchableFieldSelect';
 
 interface ValidationViewProps {
@@ -154,11 +154,16 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
   const [addFieldDialogOpen, setAddFieldDialogOpen] = useState(false);
   const [templateName, setTemplateName] = useState('');
-  const [templates, setTemplates] = useState<ExtractionTemplate[]>(() => getTemplates());
+  const [templates, setTemplates] = useState<ExtractionTemplate[]>([]);
   const [groupMode, setGroupMode] = useState(false);
   const [selectedForGroup, setSelectedForGroup] = useState<string[]>([]);
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const [activeTab, setActiveTab] = useState<'fields' | 'events'>('fields');
+
+  // Load templates from DB
+  React.useEffect(() => {
+    getTemplates().then(setTemplates);
+  }, []);
 
   // Collect all event keys to exclude from fields tab
   const eventKeys = useMemo(() => {
@@ -514,7 +519,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     toast({ title: 'Validação aplicada!', description: 'Os campos foram atualizados.' });
   };
 
-  const handleSaveTemplate = () => {
+  const handleSaveTemplate = async () => {
     if (!templateName.trim()) return;
     const mappings: FieldMapping[] = fields.map(f => ({
       originalKey: f.originalKey,
@@ -526,12 +531,12 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     const template: ExtractionTemplate = {
       id: generateId(),
       name: templateName.trim(),
-      fieldMappings: mappings,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      field_mappings: mappings,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
-    saveTemplate(template);
-    setTemplates(getTemplates());
+    await saveTemplate(template);
+    getTemplates().then(setTemplates);
     setSaveDialogOpen(false);
     setTemplateName('');
     handleApplyChanges();
@@ -544,7 +549,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     setFields(prev => {
       // First pass: apply mappings and status
       let updated = prev.map(f => {
-        const mapping = tmpl.fieldMappings.find(m => m.originalKey === f.originalKey);
+        const mapping = tmpl.field_mappings.find(m => m.originalKey === f.originalKey);
         if (mapping) {
           return {
             ...f,
@@ -558,7 +563,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
       });
       
       // Second pass: restore groupings from template
-      for (const mapping of tmpl.fieldMappings) {
+      for (const mapping of tmpl.field_mappings) {
         if (mapping.parentKey) {
           const childField = updated.find(f => f.originalKey === mapping.originalKey);
           const parentField = updated.find(f => f.originalKey === mapping.parentKey);
@@ -577,9 +582,9 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
     toast({ title: 'Modelo aplicado com agrupamentos!' });
   };
 
-  const handleDeleteTemplate = (templateId: string) => {
-    deleteTemplate(templateId);
-    setTemplates(getTemplates());
+  const handleDeleteTemplate = async (templateId: string) => {
+    await deleteTemplate(templateId);
+    getTemplates().then(setTemplates);
     toast({ title: 'Modelo excluído' });
   };
 
@@ -788,7 +793,7 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
               <SelectContent>
                 {templates.map(t => (
                   <SelectItem key={t.id} value={t.id}>
-                    {t.name} ({t.fieldMappings.length} regras)
+                    {t.name} ({t.field_mappings.length} regras)
                   </SelectItem>
                 ))}
               </SelectContent>

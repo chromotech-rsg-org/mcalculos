@@ -1926,11 +1926,11 @@ export const applyTemplate = (months: ExtractedMonth[], template: ExtractionTemp
   return months.map(month => {
     const updatedFields = (month.fields || [])
       .filter(f => {
-        const mapping = template.fieldMappings.find(m => m.originalKey === f.key);
+        const mapping = template.field_mappings.find(m => m.originalKey === f.key);
         return !mapping || !mapping.ignore;
       })
       .map(f => {
-        const mapping = template.fieldMappings.find(m => m.originalKey === f.key);
+        const mapping = template.field_mappings.find(m => m.originalKey === f.key);
         if (mapping && mapping.mappedKey !== mapping.originalKey) {
           return { ...f, key: mapping.mappedKey };
         }

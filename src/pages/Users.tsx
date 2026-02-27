@@ -5,22 +5,20 @@ import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useToast } from '@/hooks/use-toast';
-import { maskCPF, maskCEP, maskPhone } from '@/lib/masks';
-import { fetchAddressByCEP } from '@/lib/viacep';
-import { getUsers, saveUser, deleteUser, generateId } from '@/lib/storage';
+import { supabase } from '@/integrations/supabase/client';
 import { User, UserRole } from '@/types';
+
+const MAIN_ADMIN_EMAIL = 'admin@mcalculo.com.br';
 
 const Users: React.FC = () => {
   const { currentUser, updateUser } = useAuth();
   const { toast } = useToast();
   const [users, setUsers] = useState<User[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [isFetchingCEP, setIsFetchingCEP] = useState(false);
   const [showModal, setShowModal] = useState(false);
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -31,131 +29,102 @@ const Users: React.FC = () => {
   const emptyForm = {
     name: '',
     email: '',
-    phone: '',
-    cpf: '',
-    cep: '',
-    address: '',
-    number: '',
-    complement: '',
-    city: '',
-    state: '',
-    notes: '',
+    password: '',
     role: 'user' as UserRole,
   };
 
   const [formData, setFormData] = useState(emptyForm);
 
-  useEffect(() => {
-    if (isAdmin) {
-      setUsers(getUsers());
+  const fetchUsers = async () => {
+    if (!isAdmin) return;
+    
+    const { data: profiles } = await supabase.from('profiles').select('*');
+    const { data: roles } = await supabase.from('user_roles').select('*');
+    
+    if (!profiles) return;
+
+    // Get emails from edge function
+    const { data: authUsers } = await supabase.functions.invoke('list-users');
+    const emailMap: Record<string, string> = {};
+    if (Array.isArray(authUsers)) {
+      authUsers.forEach((u: any) => { emailMap[u.auth_id] = u.email; });
     }
+
+    const userList: User[] = profiles.map(p => {
+      const userRoles = roles?.filter(r => r.user_id === p.user_id) || [];
+      const role: UserRole = userRoles.some(r => r.role === 'admin') ? 'admin' : 'user';
+      return {
+        id: p.id,
+        user_id: p.user_id,
+        name: p.name,
+        email: emailMap[p.user_id] || '',
+        role,
+        created_at: p.created_at,
+      };
+    });
+
+    setUsers(userList);
+  };
+
+  useEffect(() => {
+    fetchUsers();
   }, [isAdmin, showModal, deleteDialogOpen]);
 
-  // If regular user, show their profile
+  // For regular user - show profile
   useEffect(() => {
     if (!isAdmin && currentUser) {
       setFormData({
         name: currentUser.name || '',
         email: currentUser.email || '',
-        phone: currentUser.phone || '',
-        cpf: currentUser.cpf || '',
-        cep: currentUser.cep || '',
-        address: currentUser.address || '',
-        number: currentUser.number || '',
-        complement: currentUser.complement || '',
-        city: currentUser.city || '',
-        state: currentUser.state || '',
-        notes: currentUser.notes || '',
+        password: '',
         role: currentUser.role || 'user',
       });
     }
   }, [isAdmin, currentUser]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    let maskedValue = value;
-
-    if (name === 'cpf') maskedValue = maskCPF(value);
-    if (name === 'cep') maskedValue = maskCEP(value);
-    if (name === 'phone') maskedValue = maskPhone(value);
-
-    setFormData(prev => ({ ...prev, [name]: maskedValue }));
-  };
-
-  const handleCEPBlur = async () => {
-    const cleanCEP = formData.cep.replace(/\D/g, '');
-    if (cleanCEP.length === 8) {
-      setIsFetchingCEP(true);
-      const address = await fetchAddressByCEP(cleanCEP);
-      setIsFetchingCEP(false);
-
-      if (address) {
-        setFormData(prev => ({
-          ...prev,
-          address: address.logradouro,
-          complement: address.complemento,
-          city: address.localidade,
-          state: address.uf,
-        }));
-      }
-    }
+    setFormData(prev => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsLoading(true);
 
-    await new Promise(resolve => setTimeout(resolve, 300));
-
     if (isAdmin && editingUser) {
-      // Admin editing existing user
-      const updatedUser: User = {
-        ...editingUser,
-        ...formData,
-      };
-      saveUser(updatedUser);
+      // Admin editing existing user - update profile name
+      await supabase.from('profiles').update({ name: formData.name }).eq('user_id', editingUser.user_id);
       
-      // If editing current user, update auth context
-      if (editingUser.id === currentUser?.id) {
-        updateUser(formData);
+      // Update role if changed
+      const currentRole = editingUser.role;
+      if (formData.role !== currentRole) {
+        // Remove old role, add new
+        await supabase.from('user_roles').delete().eq('user_id', editingUser.user_id);
+        await supabase.from('user_roles').insert({ user_id: editingUser.user_id, role: formData.role });
       }
       
-      toast({
-        title: 'Usuário atualizado!',
-        description: 'As informações foram salvas com sucesso.',
-      });
+      if (editingUser.user_id === currentUser?.user_id) {
+        await updateUser({ name: formData.name });
+      }
+      
+      toast({ title: 'Usuário atualizado!', description: 'As informações foram salvas com sucesso.' });
     } else if (isAdmin && !editingUser) {
-      // Admin creating new user
-      const existingUser = users.find(u => u.email.toLowerCase() === formData.email.toLowerCase());
-      if (existingUser) {
-        toast({
-          variant: 'destructive',
-          title: 'Email já cadastrado',
-          description: 'Este email já está em uso.',
-        });
+      // Admin creating new user via edge function
+      const { data, error } = await supabase.functions.invoke('create-user', {
+        body: { email: formData.email, password: formData.password, name: formData.name, role: formData.role },
+      });
+      
+      if (error) {
+        toast({ variant: 'destructive', title: 'Erro', description: 'Erro ao criar usuário.' });
         setIsLoading(false);
         return;
       }
 
-      const newUser: User = {
-        ...formData,
-        id: generateId(),
-        createdAt: new Date().toISOString(),
-      };
-      saveUser(newUser);
-      
-      toast({
-        title: 'Usuário criado!',
-        description: 'O novo usuário foi cadastrado com sucesso.',
-      });
+      toast({ title: 'Usuário criado!', description: 'O novo usuário foi cadastrado com sucesso.' });
     } else {
-      // Regular user editing their own profile
-      updateUser(formData);
-      
-      toast({
-        title: 'Perfil atualizado!',
-        description: 'Suas informações foram salvas com sucesso.',
-      });
+      // Regular user editing own profile
+      await updateUser({ name: formData.name });
+      toast({ title: 'Perfil atualizado!', description: 'Suas informações foram salvas com sucesso.' });
     }
 
     setShowModal(false);
@@ -169,15 +138,7 @@ const Users: React.FC = () => {
     setFormData({
       name: user.name,
       email: user.email,
-      phone: user.phone,
-      cpf: user.cpf,
-      cep: user.cep,
-      address: user.address,
-      number: user.number,
-      complement: user.complement,
-      city: user.city,
-      state: user.state,
-      notes: user.notes,
+      password: '',
       role: user.role,
     });
     setShowModal(true);
@@ -194,14 +155,20 @@ const Users: React.FC = () => {
     setDeleteDialogOpen(true);
   };
 
-  const handleDelete = () => {
-    if (userToDelete) {
-      deleteUser(userToDelete.id);
-      toast({
-        title: 'Usuário excluído',
-        description: `${userToDelete.name} foi removido do sistema.`,
-      });
+  const handleDelete = async () => {
+    if (!userToDelete) return;
+    
+    // Call edge function to delete user
+    const { error } = await supabase.functions.invoke('delete-user', {
+      body: { userId: userToDelete.user_id },
+    });
+    
+    if (error) {
+      toast({ variant: 'destructive', title: 'Erro', description: 'Erro ao excluir usuário.' });
+    } else {
+      toast({ title: 'Usuário excluído', description: `${userToDelete.name} foi removido do sistema.` });
     }
+    
     setDeleteDialogOpen(false);
     setUserToDelete(null);
   };
@@ -218,193 +185,45 @@ const Users: React.FC = () => {
     return role === 'admin' ? 'Administrador' : 'Usuário';
   };
 
-  // Regular user view - just their profile
+  const canDeleteUser = (user: User) => {
+    // Cannot delete yourself
+    if (user.user_id === currentUser?.user_id) return false;
+    // Cannot delete main admin
+    if (user.email === MAIN_ADMIN_EMAIL) return false;
+    return true;
+  };
+
+  // Regular user view
   if (!isAdmin) {
     return (
       <div className="max-w-2xl mx-auto space-y-6">
         <div>
           <h1 className="text-3xl font-bold">Meu Perfil</h1>
-          <p className="text-muted-foreground mt-1">
-            Gerencie suas informações pessoais
-          </p>
+          <p className="text-muted-foreground mt-1">Gerencie suas informações pessoais</p>
         </div>
 
         <Card>
           <CardHeader>
             <CardTitle>Informações Pessoais</CardTitle>
-            <CardDescription>
-              Atualize seus dados pessoais e de contato
-            </CardDescription>
+            <CardDescription>Atualize seus dados</CardDescription>
           </CardHeader>
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-6">
               <div className="grid gap-4 sm:grid-cols-2">
                 <div className="space-y-2">
                   <Label htmlFor="name">Nome Completo</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                      <LordIcon icon="user" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
-                    </div>
-                    <Input
-                      id="name"
-                      name="name"
-                      value={formData.name}
-                      onChange={handleChange}
-                      className="pl-10"
-                    />
-                  </div>
+                  <Input id="name" name="name" value={formData.name} onChange={handleChange} />
                 </div>
-
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                      <LordIcon icon="mail" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
-                    </div>
-                    <Input
-                      id="email"
-                      name="email"
-                      type="email"
-                      value={formData.email}
-                      onChange={handleChange}
-                      className="pl-10"
-                      disabled
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="phone">Celular</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                      <LordIcon icon="user" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
-                    </div>
-                    <Input
-                      id="phone"
-                      name="phone"
-                      value={formData.phone}
-                      onChange={handleChange}
-                      className="pl-10"
-                    />
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="cpf">CPF</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                      <LordIcon icon="document" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
-                    </div>
-                    <Input
-                      id="cpf"
-                      name="cpf"
-                      value={formData.cpf}
-                      onChange={handleChange}
-                      className="pl-10"
-                    />
-                  </div>
+                  <Input id="email" name="email" type="email" value={formData.email} disabled />
                 </div>
               </div>
-
-              <div className="grid gap-4 sm:grid-cols-2">
-                <div className="space-y-2">
-                  <Label htmlFor="cep">CEP</Label>
-                  <div className="relative">
-                    <div className="absolute left-3 top-1/2 -translate-y-1/2">
-                      <LordIcon icon="search" size={20} trigger="loop-on-hover" colors={{ primary: '#6b7280', secondary: '#6b7280' }} />
-                    </div>
-                    <Input
-                      id="cep"
-                      name="cep"
-                      value={formData.cep}
-                      onChange={handleChange}
-                      onBlur={handleCEPBlur}
-                      className="pl-10"
-                    />
-                    {isFetchingCEP && (
-                      <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 animate-spin text-primary" />
-                    )}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="address">Logradouro</Label>
-                  <Input
-                    id="address"
-                    name="address"
-                    value={formData.address}
-                    onChange={handleChange}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="number">Número</Label>
-                  <Input
-                    id="number"
-                    name="number"
-                    value={formData.number}
-                    onChange={handleChange}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="complement">Complemento</Label>
-                  <Input
-                    id="complement"
-                    name="complement"
-                    value={formData.complement}
-                    onChange={handleChange}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="city">Cidade</Label>
-                  <Input
-                    id="city"
-                    name="city"
-                    value={formData.city}
-                    onChange={handleChange}
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="state">Estado</Label>
-                  <Input
-                    id="state"
-                    name="state"
-                    value={formData.state}
-                    onChange={handleChange}
-                    maxLength={2}
-                  />
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="notes">Observações</Label>
-                <Textarea
-                  id="notes"
-                  name="notes"
-                  value={formData.notes}
-                  onChange={handleChange}
-                  rows={3}
-                />
-              </div>
-
-              <Button
-                type="submit"
-                disabled={isLoading}
-                className="w-full gradient-primary text-primary-foreground"
-              >
+              <Button type="submit" disabled={isLoading} className="w-full gradient-primary text-primary-foreground">
                 {isLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Salvando...
-                  </>
+                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Salvando...</>
                 ) : (
-                  <>
-                    <LordIcon icon="save" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
-                    Salvar Alterações
-                  </>
+                  <><LordIcon icon="save" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />Salvar Alterações</>
                 )}
               </Button>
             </form>
@@ -414,17 +233,14 @@ const Users: React.FC = () => {
     );
   }
 
-  // Admin view - user management
+  // Admin view
   return (
     <div className="space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold">Usuários</h1>
-          <p className="text-muted-foreground mt-1">
-            Gerencie os usuários do sistema
-          </p>
+          <p className="text-muted-foreground mt-1">Gerencie os usuários do sistema</p>
         </div>
-
         <Button onClick={openNewUserModal} className="gradient-primary text-primary-foreground">
           <LordIcon icon="plus" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
           <span className="ml-2">Novo Usuário</span>
@@ -434,17 +250,12 @@ const Users: React.FC = () => {
       <Card>
         <CardHeader>
           <CardTitle>Lista de Usuários</CardTitle>
-          <CardDescription>
-            {users.length} usuário(s) cadastrado(s)
-          </CardDescription>
+          <CardDescription>{users.length} usuário(s) cadastrado(s)</CardDescription>
         </CardHeader>
         <CardContent>
           <div className="space-y-2">
             {users.map(user => (
-              <div
-                key={user.id}
-                className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors"
-              >
+              <div key={user.id} className="flex items-center gap-4 p-4 rounded-xl bg-muted/50 hover:bg-muted transition-colors">
                 <div className="p-2 rounded-lg bg-primary/10">
                   <LordIcon icon="user" size={20} trigger="loop" delay={4000} colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
                 </div>
@@ -453,27 +264,17 @@ const Users: React.FC = () => {
                   <div className="flex items-center gap-2">
                     <p className="font-medium truncate">{user.name}</p>
                     {getRoleIcon(user.role)}
-                    <span className="text-xs text-muted-foreground">
-                      {getRoleLabel(user.role)}
-                    </span>
+                    <span className="text-xs text-muted-foreground">{getRoleLabel(user.role)}</span>
                   </div>
                   <p className="text-sm text-muted-foreground truncate">{user.email}</p>
                 </div>
                 
                 <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => openEditModal(user)}
-                  >
+                  <Button variant="ghost" size="icon" onClick={() => openEditModal(user)}>
                     <LordIcon icon="edit" size={16} trigger="hover" colors={{ primary: '#121331', secondary: '#08a88a' }} />
                   </Button>
-                  {user.id !== currentUser?.id && (
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      onClick={() => confirmDelete(user)}
-                    >
+                  {canDeleteUser(user) && (
+                    <Button variant="ghost" size="icon" onClick={() => confirmDelete(user)}>
                       <LordIcon icon="trash" size={16} trigger="hover" colors={{ primary: '#ef4444', secondary: '#ef4444' }} />
                     </Button>
                   )}
@@ -486,7 +287,7 @@ const Users: React.FC = () => {
 
       {/* User Form Modal */}
       <Dialog open={showModal} onOpenChange={setShowModal}>
-        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>{editingUser ? 'Editar Usuário' : 'Novo Usuário'}</DialogTitle>
             <DialogDescription>
@@ -495,169 +296,45 @@ const Users: React.FC = () => {
           </DialogHeader>
 
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid gap-4 sm:grid-cols-2">
-              <div className="space-y-2">
-                <Label htmlFor="name">Nome Completo *</Label>
-                <Input
-                  id="name"
-                  name="name"
-                  value={formData.name}
-                  onChange={handleChange}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email *</Label>
-                <Input
-                  id="email"
-                  name="email"
-                  type="email"
-                  value={formData.email}
-                  onChange={handleChange}
-                  disabled={!!editingUser}
-                  required
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="phone">Celular</Label>
-                <Input
-                  id="phone"
-                  name="phone"
-                  value={formData.phone}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="cpf">CPF</Label>
-                <Input
-                  id="cpf"
-                  name="cpf"
-                  value={formData.cpf}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="role">Perfil *</Label>
-                <Select
-                  value={formData.role}
-                  onValueChange={(value: UserRole) => setFormData(prev => ({ ...prev, role: value }))}
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Selecione o perfil" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Administrador</SelectItem>
-                    <SelectItem value="user">Usuário</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="cep">CEP</Label>
-                <div className="relative">
-                  <Input
-                    id="cep"
-                    name="cep"
-                    value={formData.cep}
-                    onChange={handleChange}
-                    onBlur={handleCEPBlur}
-                  />
-                  {isFetchingCEP && (
-                    <Loader2 className="absolute right-3 top-1/2 -translate-y-1/2 h-5 w-5 animate-spin text-primary" />
-                  )}
-                </div>
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="address">Logradouro</Label>
-                <Input
-                  id="address"
-                  name="address"
-                  value={formData.address}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="number">Número</Label>
-                <Input
-                  id="number"
-                  name="number"
-                  value={formData.number}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="complement">Complemento</Label>
-                <Input
-                  id="complement"
-                  name="complement"
-                  value={formData.complement}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="city">Cidade</Label>
-                <Input
-                  id="city"
-                  name="city"
-                  value={formData.city}
-                  onChange={handleChange}
-                />
-              </div>
-
-              <div className="space-y-2 sm:col-span-2">
-                <Label htmlFor="state">Estado</Label>
-                <Input
-                  id="state"
-                  name="state"
-                  value={formData.state}
-                  onChange={handleChange}
-                  maxLength={2}
-                />
-              </div>
+            <div className="space-y-2">
+              <Label htmlFor="name">Nome *</Label>
+              <Input id="name" name="name" value={formData.name} onChange={handleChange} required />
             </div>
 
             <div className="space-y-2">
-              <Label htmlFor="notes">Observações</Label>
-              <Textarea
-                id="notes"
-                name="notes"
-                value={formData.notes}
-                onChange={handleChange}
-                rows={3}
-              />
+              <Label htmlFor="email">Email *</Label>
+              <Input id="email" name="email" type="email" value={formData.email} onChange={handleChange} disabled={!!editingUser} required />
+            </div>
+
+            {!editingUser && (
+              <div className="space-y-2">
+                <Label htmlFor="password">Senha *</Label>
+                <Input id="password" name="password" type="password" value={formData.password} onChange={handleChange} required minLength={6} />
+              </div>
+            )}
+
+            <div className="space-y-2">
+              <Label htmlFor="role">Perfil *</Label>
+              <Select value={formData.role} onValueChange={(value: UserRole) => setFormData(prev => ({ ...prev, role: value }))}>
+                <SelectTrigger><SelectValue placeholder="Selecione o perfil" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                  <SelectItem value="user">Usuário</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
 
             <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowModal(false)}>
-                Cancelar
-              </Button>
+              <Button type="button" variant="outline" onClick={() => setShowModal(false)}>Cancelar</Button>
               <Button type="submit" disabled={isLoading} className="gradient-primary text-primary-foreground">
-                {isLoading ? (
-                  <>
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                    Salvando...
-                  </>
-                ) : (
-                  <>
-                    <LordIcon icon="save" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
-                    Salvar
-                  </>
-                )}
+                {isLoading ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Salvando...</> : 'Salvar'}
               </Button>
             </DialogFooter>
           </form>
         </DialogContent>
       </Dialog>
 
-      {/* Delete Confirmation Dialog */}
+      {/* Delete Confirmation */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
@@ -667,14 +344,8 @@ const Users: React.FC = () => {
             </DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleDelete}>
-              <LordIcon icon="trash" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
-              <span className="ml-2">Excluir</span>
-              Excluir
-            </Button>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDelete}>Excluir</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

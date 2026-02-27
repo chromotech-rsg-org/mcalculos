@@ -2,19 +2,11 @@ export type UserRole = 'admin' | 'user';
 
 export interface User {
   id: string;
+  user_id: string;
   name: string;
   email: string;
-  phone: string;
-  cpf: string;
-  cep: string;
-  address: string;
-  number: string;
-  complement: string;
-  city: string;
-  state: string;
-  notes: string;
   role: UserRole;
-  createdAt: string;
+  created_at: string;
 }
 
 export interface DocumentFile {
@@ -42,7 +34,6 @@ export interface PayslipEvent {
 export interface ExtractedMonth {
   month: string;
   fields: ExtractedField[];
-  // Structured payslip data (pattern-specific)
   empresa?: string;
   cnpj?: string;
   centroCusto?: string;
@@ -102,23 +93,23 @@ export interface FieldMapping {
 export interface ExtractionTemplate {
   id: string;
   name: string;
-  fieldMappings: FieldMapping[];
-  createdAt: string;
-  updatedAt: string;
+  field_mappings: FieldMapping[];
+  created_at: string;
+  updated_at: string;
 }
 
 export interface Document {
   id: string;
-  userId: string;
+  user_id: string;
   name: string;
   description: string;
-  payslipPattern?: string;
-  templateId?: string;
+  payslip_pattern?: string;
+  template_id?: string;
   files: DocumentFile[];
-  extractedData: ExtractedData | null;
+  extracted_data: ExtractedData | null;
   status: 'pending' | 'extracting' | 'extracted' | 'error';
-  createdAt: string;
-  updatedAt: string;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface AuthState {

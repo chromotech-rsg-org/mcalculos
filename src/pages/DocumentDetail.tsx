@@ -11,7 +11,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { getDocumentById, saveDocument, deleteDocument } from '@/lib/storage';
+import { getDocumentById, saveDocument, deleteDocument } from '@/lib/supabase-storage';
 import { Document, ExtractedData, ExtractedMonth } from '@/types';
 import { extractDataFromPDF, extractDataFromImage } from '@/lib/extraction';
 import { exportToExcel, exportToCSV } from '@/lib/export';
@@ -44,13 +44,14 @@ const DocumentDetail: React.FC = () => {
 
   useEffect(() => {
     if (id) {
-      const document = getDocumentById(id);
-      if (document) {
-        setDoc(document);
-        setSelectedPattern(document.payslipPattern || document.extractedData?.payslipPattern || 'auto');
-      } else {
-        navigate('/documents');
-      }
+      getDocumentById(id).then(document => {
+        if (document) {
+          setDoc(document);
+          setSelectedPattern(document.payslip_pattern || document.extracted_data?.payslipPattern || 'auto');
+        } else {
+          navigate('/documents');
+        }
+      });
     }
   }, [id, navigate]);
 
@@ -85,8 +86,8 @@ const DocumentDetail: React.FC = () => {
     if (doc) {
       const updatedDoc = {
         ...doc,
-        payslipPattern: value !== 'auto' ? value : undefined,
-        updatedAt: new Date().toISOString(),
+        payslip_pattern: value !== 'auto' ? value : undefined,
+        updated_at: new Date().toISOString(),
       };
       setDoc(updatedDoc);
       saveDocument(updatedDoc);
@@ -101,7 +102,7 @@ const DocumentDetail: React.FC = () => {
     
     const updatedDoc = { ...doc, status: 'extracting' as const };
     setDoc(updatedDoc);
-    saveDocument(updatedDoc);
+    await saveDocument(updatedDoc);
     
     try {
       let allMonths: ExtractedMonth[] = [];
@@ -141,14 +142,14 @@ const DocumentDetail: React.FC = () => {
       
       const finalDoc = {
         ...doc,
-        extractedData: finalData,
-        payslipPattern: detectedPattern || doc.payslipPattern,
+        extracted_data: finalData,
+        payslip_pattern: detectedPattern || doc.payslip_pattern,
         status: 'extracted' as const,
-        updatedAt: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
       };
       
       setDoc(finalDoc);
-      saveDocument(finalDoc);
+      await saveDocument(finalDoc);
       
       if (detectedPattern && selectedPattern === 'auto') {
         setSelectedPattern(detectedPattern);
@@ -162,7 +163,7 @@ const DocumentDetail: React.FC = () => {
       console.error('Extraction error:', error);
       const errorDoc = { ...doc, status: 'error' as const };
       setDoc(errorDoc);
-      saveDocument(errorDoc);
+      await saveDocument(errorDoc);
       
       toast({
         variant: 'destructive',
@@ -180,9 +181,9 @@ const DocumentDetail: React.FC = () => {
   };
 
   const saveEdit = () => {
-    if (!doc || !doc.extractedData || !editingCell) return;
+    if (!doc || !doc.extracted_data || !editingCell) return;
     
-    const updatedMonths = [...doc.extractedData.months];
+    const updatedMonths = [...doc.extracted_data.months];
     const month = { ...updatedMonths[editingCell.monthIndex] };
     
     if (editingCell.eventIndex !== undefined && editingCell.subField && month.eventos) {
@@ -193,7 +194,6 @@ const DocumentDetail: React.FC = () => {
       };
       month.eventos = eventos;
     } else if (editingCell.field.startsWith('fields.')) {
-      // Dynamic field edit: fields.{index}.value
       const parts = editingCell.field.split('.');
       const fieldIdx = parseInt(parts[1], 10);
       if (month.fields && month.fields[fieldIdx]) {
@@ -209,8 +209,8 @@ const DocumentDetail: React.FC = () => {
     
     const updatedDoc = {
       ...doc,
-      extractedData: { ...doc.extractedData, months: updatedMonths },
-      updatedAt: new Date().toISOString(),
+      extracted_data: { ...doc.extracted_data, months: updatedMonths },
+      updated_at: new Date().toISOString(),
     };
     
     setDoc(updatedDoc);
@@ -226,13 +226,13 @@ const DocumentDetail: React.FC = () => {
   };
 
   const deleteRow = (monthIndex: number) => {
-    if (!doc || !doc.extractedData) return;
+    if (!doc || !doc.extracted_data) return;
     
-    const updatedMonths = doc.extractedData.months.filter((_, i) => i !== monthIndex);
+    const updatedMonths = doc.extracted_data.months.filter((_, i) => i !== monthIndex);
     const updatedDoc = {
       ...doc,
-      extractedData: { ...doc.extractedData, months: updatedMonths },
-      updatedAt: new Date().toISOString(),
+      extracted_data: { ...doc.extracted_data, months: updatedMonths },
+      updated_at: new Date().toISOString(),
     };
     
     setDoc(updatedDoc);
@@ -241,12 +241,12 @@ const DocumentDetail: React.FC = () => {
   };
 
   const handleExport = (format: 'xlsx' | 'csv') => {
-    if (!doc || !doc.extractedData) return;
+    if (!doc || !doc.extracted_data) return;
     
     if (format === 'xlsx') {
-      exportToExcel(doc.extractedData, doc.name);
+      exportToExcel(doc.extracted_data, doc.name);
     } else {
-      exportToCSV(doc.extractedData, doc.name);
+      exportToCSV(doc.extracted_data, doc.name);
     }
     
     toast({
@@ -255,9 +255,9 @@ const DocumentDetail: React.FC = () => {
     });
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!doc) return;
-    deleteDocument(doc.id);
+    await deleteDocument(doc.id);
     toast({ title: 'Documento excluído', description: 'O documento foi removido com sucesso.' });
     navigate('/documents');
   };
@@ -353,7 +353,7 @@ const DocumentDetail: React.FC = () => {
         </div>
       </div>
 
-      {/* Pattern Select + Status - Full width at top */}
+      {/* Pattern Select + Status */}
       <Card>
         <CardContent className="pt-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4">
@@ -396,8 +396,8 @@ const DocumentDetail: React.FC = () => {
                   <div className="min-w-0">
                     <p className="font-medium text-sm">Dados extraídos</p>
                     <p className="text-xs text-muted-foreground">
-                      {doc.extractedData?.months.length} período(s)
-                      {doc.extractedData?.payslipPattern && ` • Modelo ${doc.extractedData.payslipPattern}`}
+                      {doc.extracted_data?.months.length} período(s)
+                      {doc.extracted_data?.payslipPattern && ` • Modelo ${doc.extracted_data.payslipPattern}`}
                     </p>
                   </div>
                 </>
@@ -415,26 +415,18 @@ const DocumentDetail: React.FC = () => {
             
             <div className="flex gap-2 flex-shrink-0">
               {(doc.status === 'pending' || doc.status === 'error') && (
-                <Button
-                  onClick={handleExtraction}
-                  disabled={isExtracting}
-                  className="gradient-primary text-primary-foreground"
-                >
-                  {isExtracting ? (
-                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Extraindo...</>
-                  ) : 'Extrair Dados'}
+                <Button onClick={handleExtraction} disabled={isExtracting} className="gradient-primary text-primary-foreground">
+                  {isExtracting ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Extraindo...</> : 'Extrair Dados'}
                 </Button>
               )}
               
               {doc.status === 'extracted' && (
                 <>
                   <Button variant="outline" size="sm" onClick={handleExtraction} disabled={isExtracting}>
-                    <RefreshCw className="h-4 w-4 mr-1" />
-                    Re-extrair
+                    <RefreshCw className="h-4 w-4 mr-1" />Re-extrair
                   </Button>
                   <Button onClick={() => setExportDialogOpen(true)}>
-                    <FileSpreadsheet className="h-4 w-4 mr-2" />
-                    Exportar
+                    <FileSpreadsheet className="h-4 w-4 mr-2" />Exportar
                   </Button>
                 </>
               )}
@@ -443,10 +435,7 @@ const DocumentDetail: React.FC = () => {
           
           {isExtracting && (
             <div className="h-2 bg-muted rounded-full overflow-hidden">
-              <div
-                className="h-full gradient-primary transition-all duration-300"
-                style={{ width: `${extractionProgress}%` }}
-              />
+              <div className="h-full gradient-primary transition-all duration-300" style={{ width: `${extractionProgress}%` }} />
             </div>
           )}
         </CardContent>
@@ -455,19 +444,10 @@ const DocumentDetail: React.FC = () => {
       {/* View mode tabs */}
       <Tabs defaultValue="detail" className="space-y-4">
         <TabsList>
-          <TabsTrigger value="detail">
-            <FileText className="h-4 w-4 mr-1" />
-            Detalhado
-          </TabsTrigger>
-          <TabsTrigger value="table">
-            <LayoutList className="h-4 w-4 mr-1" />
-            Lista
-          </TabsTrigger>
-          {doc.extractedData && (
-            <TabsTrigger value="validate">
-              <ClipboardCheck className="h-4 w-4 mr-1" />
-              Validar
-            </TabsTrigger>
+          <TabsTrigger value="detail"><FileText className="h-4 w-4 mr-1" />Detalhado</TabsTrigger>
+          <TabsTrigger value="table"><LayoutList className="h-4 w-4 mr-1" />Lista</TabsTrigger>
+          {doc.extracted_data && (
+            <TabsTrigger value="validate"><ClipboardCheck className="h-4 w-4 mr-1" />Validar</TabsTrigger>
           )}
         </TabsList>
 
@@ -478,26 +458,26 @@ const DocumentDetail: React.FC = () => {
             <Card className="flex flex-col overflow-hidden">
               <CardHeader className="py-3 flex-shrink-0">
                 <div className="flex items-center justify-between">
-                  <CardTitle className="text-base">Preview do Documento</CardTitle>
+                  <CardTitle className="text-base">Preview</CardTitle>
                   {doc.files.length > 1 && (
-                    <div className="flex gap-1">
-                      {doc.files.map((file, index) => (
+                    <div className="flex items-center gap-2">
+                      {doc.files.map((file, idx) => (
                         <Button
-                          key={file.id}
-                          variant={activeFileIndex === index ? 'default' : 'outline'}
+                          key={idx}
                           size="sm"
+                          variant={activeFileIndex === idx ? 'default' : 'outline'}
                           className="h-7 text-xs"
-                          onClick={() => setActiveFileIndex(index)}
+                          onClick={() => setActiveFileIndex(idx)}
                         >
-                          Arq. {index + 1}
+                          {idx + 1}
                         </Button>
                       ))}
                     </div>
                   )}
                 </div>
               </CardHeader>
-              <CardContent className="flex-1 overflow-hidden p-3 pt-0">
-                <div ref={pdfContainerRef} className="rounded-lg overflow-hidden bg-muted h-full">
+              <CardContent className="flex-1 p-3 pt-0">
+                <div ref={pdfContainerRef} className="h-full rounded-lg overflow-hidden border">
                   {doc.files[activeFileIndex]?.type === 'application/pdf' ? (
                     pdfBlobUrls[activeFileIndex] ? (
                       <iframe
@@ -506,17 +486,20 @@ const DocumentDetail: React.FC = () => {
                         title="PDF Preview"
                       />
                     ) : (
-                      <div className="flex items-center justify-center h-full text-muted-foreground text-sm">
-                        <Loader2 className="h-5 w-5 animate-spin mr-2" />
-                        Carregando preview...
+                      <div className="flex items-center justify-center h-full">
+                        <Loader2 className="h-8 w-8 animate-spin text-primary" />
                       </div>
                     )
-                  ) : (
+                  ) : doc.files[activeFileIndex]?.type.startsWith('image/') ? (
                     <img
-                      src={doc.files[activeFileIndex]?.base64}
+                      src={doc.files[activeFileIndex].base64}
                       alt="Document preview"
                       className="w-full h-full object-contain"
                     />
+                  ) : (
+                    <div className="flex items-center justify-center h-full text-muted-foreground">
+                      <p>Visualização não disponível</p>
+                    </div>
                   )}
                 </div>
               </CardContent>
@@ -528,26 +511,18 @@ const DocumentDetail: React.FC = () => {
                 <CardTitle className="text-base">Dados Extraídos</CardTitle>
               </CardHeader>
               <CardContent className="flex-1 overflow-auto p-3 pt-0">
-                {doc.extractedData ? (
+                {doc.extracted_data ? (
                   <div className="space-y-4">
                     <CardDescription className="text-xs">Clique em qualquer valor para editar</CardDescription>
-                    {doc.extractedData.months.map((month, monthIndex) => (
+                    {doc.extracted_data.months.map((month, monthIndex) => (
                       <div key={monthIndex} className="space-y-4">
                         <div className="flex items-center justify-between">
-                          <h3 className="font-semibold text-sm">
-                            {month.competencia || month.month}
-                          </h3>
-                          <Button
-                            size="icon"
-                            variant="ghost"
-                            className="h-7 w-7 text-destructive"
-                            onClick={() => deleteRow(monthIndex)}
-                          >
+                          <h3 className="font-semibold text-sm">{month.competencia || month.month}</h3>
+                          <Button size="icon" variant="ghost" className="h-7 w-7 text-destructive" onClick={() => deleteRow(monthIndex)}>
                             <Trash2 className="h-3.5 w-3.5" />
                           </Button>
                         </div>
 
-                        {/* Dynamic fields */}
                         {month.fields && month.fields.length > 0 && (
                           <div className="grid grid-cols-2 gap-2 text-sm">
                             {month.fields.map((field, fieldIdx) => (
@@ -561,7 +536,6 @@ const DocumentDetail: React.FC = () => {
                           </div>
                         )}
 
-                        {/* Events table */}
                         {month.eventos && month.eventos.length > 0 && (
                           <div className="mt-2">
                             <p className="text-xs font-semibold text-muted-foreground mb-1">Eventos ({month.eventos.length})</p>
@@ -591,9 +565,7 @@ const DocumentDetail: React.FC = () => {
                             </div>
                           </div>
                         )}
-                        {monthIndex < (doc.extractedData?.months.length || 0) - 1 && (
-                          <hr className="border-border" />
-                        )}
+                        {monthIndex < (doc.extracted_data?.months.length || 0) - 1 && <hr className="border-border" />}
                       </div>
                     ))}
                   </div>
@@ -607,34 +579,25 @@ const DocumentDetail: React.FC = () => {
           </div>
         </TabsContent>
 
-        {/* Lista: full-width DataTable */}
         <TabsContent value="table" className="mt-0">
-          {doc.extractedData ? (
-            <Card>
-              <CardContent className="p-4">
-                <DataTableView data={doc.extractedData} />
-              </CardContent>
-            </Card>
+          {doc.extracted_data ? (
+            <Card><CardContent className="p-4"><DataTableView data={doc.extracted_data} /></CardContent></Card>
           ) : (
-            <Card>
-              <CardContent className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-                <p>Extraia os dados para visualizá-los aqui</p>
-              </CardContent>
-            </Card>
+            <Card><CardContent className="flex items-center justify-center h-64 text-muted-foreground text-sm"><p>Extraia os dados para visualizá-los aqui</p></CardContent></Card>
           )}
         </TabsContent>
-        {/* Validar: field validation and template learning */}
+
         <TabsContent value="validate" className="mt-0">
-          {doc.extractedData ? (
+          {doc.extracted_data ? (
             <Card>
               <CardContent className="p-4">
                 <ValidationView
-                  data={doc.extractedData}
+                  data={doc.extracted_data}
                   onUpdate={(updatedData) => {
                     const updatedDoc = {
                       ...doc,
-                      extractedData: updatedData,
-                      updatedAt: new Date().toISOString(),
+                      extracted_data: updatedData,
+                      updated_at: new Date().toISOString(),
                     };
                     setDoc(updatedDoc);
                     saveDocument(updatedDoc);
@@ -643,42 +606,24 @@ const DocumentDetail: React.FC = () => {
               </CardContent>
             </Card>
           ) : (
-            <Card>
-              <CardContent className="flex items-center justify-center h-64 text-muted-foreground text-sm">
-                <p>Extraia os dados para validá-los aqui</p>
-              </CardContent>
-            </Card>
+            <Card><CardContent className="flex items-center justify-center h-64 text-muted-foreground text-sm"><p>Extraia os dados para validá-los aqui</p></CardContent></Card>
           )}
         </TabsContent>
       </Tabs>
 
-      {/* Export Dialog with Column Selector */}
-      {doc.extractedData && (
-        <ExportColumnSelector
-          open={exportDialogOpen}
-          onOpenChange={setExportDialogOpen}
-          data={doc.extractedData}
-          filename={doc.name}
-        />
+      {doc.extracted_data && (
+        <ExportColumnSelector open={exportDialogOpen} onOpenChange={setExportDialogOpen} data={doc.extracted_data} filename={doc.name} />
       )}
 
-      {/* Delete Confirmation Dialog */}
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Confirmar Exclusão</DialogTitle>
-            <DialogDescription>
-              Tem certeza que deseja excluir este documento? Esta ação não pode ser desfeita.
-            </DialogDescription>
+            <DialogDescription>Tem certeza que deseja excluir este documento? Esta ação não pode ser desfeita.</DialogDescription>
           </DialogHeader>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
-              Cancelar
-            </Button>
-            <Button variant="destructive" onClick={handleDelete}>
-              <Trash2 className="h-4 w-4 mr-2" />
-              Excluir
-            </Button>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancelar</Button>
+            <Button variant="destructive" onClick={handleDelete}><Trash2 className="h-4 w-4 mr-2" />Excluir</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

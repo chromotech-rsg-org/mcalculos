@@ -1,11 +1,11 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { Plus, Loader2 } from 'lucide-react';
 import LordIcon from '@/components/ui/lord-icon';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
-import { getDocuments } from '@/lib/storage';
+import { getDocuments } from '@/lib/supabase-storage';
 import { Document } from '@/types';
 import { useNavigate } from 'react-router-dom';
 import UploadModal from '@/components/documents/UploadModal';
@@ -18,9 +18,15 @@ const Dashboard: React.FC = () => {
   const [isDragging, setIsDragging] = useState(false);
   const [uploadFiles, setUploadFiles] = useState<File[]>([]);
   const [uploadModalOpen, setUploadModalOpen] = useState(false);
+  const [documents, setDocuments] = useState<Document[]>([]);
 
-  const documents = currentUser ? getDocuments(currentUser.id) : [];
-  const recentDocs = documents.slice(-5).reverse();
+  useEffect(() => {
+    if (currentUser) {
+      getDocuments(currentUser.user_id).then(setDocuments);
+    }
+  }, [currentUser]);
+
+  const recentDocs = documents.slice(0, 5);
   const pendingCount = documents.filter(d => d.status === 'pending').length;
   const extractedCount = documents.filter(d => d.status === 'extracted').length;
 
@@ -84,27 +90,20 @@ const Dashboard: React.FC = () => {
 
   const getStatusText = (status: Document['status']) => {
     switch (status) {
-      case 'pending':
-        return 'Aguardando extração';
-      case 'extracting':
-        return 'Extraindo dados...';
-      case 'extracted':
-        return 'Dados extraídos';
-      case 'error':
-        return 'Erro na extração';
+      case 'pending': return 'Aguardando extração';
+      case 'extracting': return 'Extraindo dados...';
+      case 'extracted': return 'Dados extraídos';
+      case 'error': return 'Erro na extração';
     }
   };
 
   return (
     <div className="space-y-6">
-      {/* Header */}
       <div>
         <h1 className="text-3xl font-bold">
           Olá, <span className="gradient-text">{currentUser?.name.split(' ')[0]}</span>!
         </h1>
-        <p className="text-muted-foreground mt-1">
-          Gerencie seus holerites e documentos trabalhistas
-        </p>
+        <p className="text-muted-foreground mt-1">Gerencie seus holerites e documentos trabalhistas</p>
       </div>
 
       {/* Stats */}
@@ -158,47 +157,25 @@ const Dashboard: React.FC = () => {
           onDragOver={handleDragOver}
           onDragLeave={handleDragLeave}
           onDrop={handleDrop}
-          className={`
-            relative p-8 lg:p-12 border-2 border-dashed rounded-xl transition-all duration-300
-            ${isDragging 
-              ? 'border-primary bg-primary/5 scale-[1.02]' 
-              : 'border-muted-foreground/25 hover:border-primary/50'}
-          `}
+          className={`relative p-8 lg:p-12 border-2 border-dashed rounded-xl transition-all duration-300 ${
+            isDragging ? 'border-primary bg-primary/5 scale-[1.02]' : 'border-muted-foreground/25 hover:border-primary/50'
+          }`}
         >
           <div className="flex flex-col items-center text-center">
-            <div className={`
-              p-4 rounded-2xl mb-4 transition-all duration-300
-              ${isDragging ? 'bg-primary scale-110' : 'gradient-primary'}
-            `}>
+            <div className={`p-4 rounded-2xl mb-4 transition-all duration-300 ${isDragging ? 'bg-primary scale-110' : 'gradient-primary'}`}>
               <LordIcon icon="upload" size={40} trigger="loop" delay={2000} colors={{ primary: '#ffffff', secondary: '#ffffff' }} />
             </div>
-            
             <h3 className="text-xl font-semibold mb-2">
               {isDragging ? 'Solte os arquivos aqui!' : 'Faça upload dos seus documentos'}
             </h3>
-            <p className="text-muted-foreground mb-4">
-              Arraste e solte PDFs ou imagens aqui, ou clique para selecionar
-            </p>
-            
+            <p className="text-muted-foreground mb-4">Arraste e solte PDFs ou imagens aqui, ou clique para selecionar</p>
             <label>
-              <input
-                type="file"
-                multiple
-                accept=".pdf,image/*"
-                className="hidden"
-                onChange={handleFileSelect}
-              />
+              <input type="file" multiple accept=".pdf,image/*" className="hidden" onChange={handleFileSelect} />
               <Button variant="outline" className="cursor-pointer" asChild>
-                <span>
-                  <Plus className="h-4 w-4 mr-2" />
-                  Selecionar Arquivos
-                </span>
+                <span><Plus className="h-4 w-4 mr-2" />Selecionar Arquivos</span>
               </Button>
             </label>
-            
-            <p className="text-xs text-muted-foreground mt-4">
-              Formatos aceitos: PDF, JPG, PNG, JPEG
-            </p>
+            <p className="text-xs text-muted-foreground mt-4">Formatos aceitos: PDF, JPG, PNG, JPEG</p>
           </div>
         </div>
       </Card>
@@ -225,15 +202,13 @@ const Dashboard: React.FC = () => {
                     <div>
                       <p className="font-medium">{doc.name}</p>
                       <p className="text-sm text-muted-foreground">
-                        {doc.files.length} arquivo(s) • {new Date(doc.createdAt).toLocaleDateString('pt-BR')}
+                        {doc.files.length} arquivo(s) • {new Date(doc.created_at).toLocaleDateString('pt-BR')}
                       </p>
                     </div>
                   </div>
                   <div className="flex items-center gap-2 text-sm">
                     {getStatusIcon(doc.status)}
-                    <span className="text-muted-foreground hidden sm:inline">
-                      {getStatusText(doc.status)}
-                    </span>
+                    <span className="text-muted-foreground hidden sm:inline">{getStatusText(doc.status)}</span>
                   </div>
                 </div>
               ))}
@@ -248,13 +223,12 @@ const Dashboard: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Upload Modal */}
       <UploadModal
         open={uploadModalOpen}
         onOpenChange={setUploadModalOpen}
         files={uploadFiles}
         setFiles={setUploadFiles}
-        userId={currentUser?.id || ''}
+        userId={currentUser?.user_id || ''}
         onSuccess={handleUploadSuccess}
       />
     </div>
