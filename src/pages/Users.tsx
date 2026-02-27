@@ -23,6 +23,11 @@ const Users: React.FC = () => {
   const [editingUser, setEditingUser] = useState<User | null>(null);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [userToDelete, setUserToDelete] = useState<User | null>(null);
+  const [passwordDialogOpen, setPasswordDialogOpen] = useState(false);
+  const [passwordTarget, setPasswordTarget] = useState<User | null>(null);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
 
   const isAdmin = currentUser?.role === 'admin';
 
@@ -173,6 +178,37 @@ const Users: React.FC = () => {
     setUserToDelete(null);
   };
 
+  const openPasswordDialog = (user?: User) => {
+    setPasswordTarget(user || null);
+    setNewPassword('');
+    setConfirmPassword('');
+    setPasswordDialogOpen(true);
+  };
+
+  const handleChangePassword = async () => {
+    if (newPassword !== confirmPassword) {
+      toast({ variant: 'destructive', title: 'Erro', description: 'As senhas não coincidem.' });
+      return;
+    }
+    if (newPassword.length < 6) {
+      toast({ variant: 'destructive', title: 'Erro', description: 'A senha deve ter pelo menos 6 caracteres.' });
+      return;
+    }
+
+    setIsChangingPassword(true);
+    const { data, error } = await supabase.functions.invoke('update-password', {
+      body: { userId: passwordTarget?.user_id || currentUser?.user_id, newPassword },
+    });
+
+    if (error || data?.error) {
+      toast({ variant: 'destructive', title: 'Erro', description: data?.error || 'Erro ao alterar senha.' });
+    } else {
+      toast({ title: 'Senha alterada!', description: 'A senha foi atualizada com sucesso.' });
+      setPasswordDialogOpen(false);
+    }
+    setIsChangingPassword(false);
+  };
+
   const getRoleIcon = (role: UserRole) => {
     return role === 'admin' ? (
       <LordIcon icon="shield" size={16} trigger="loop" delay={5000} colors={{ primary: '#08a88a', secondary: '#3b82f6' }} />
@@ -186,9 +222,7 @@ const Users: React.FC = () => {
   };
 
   const canDeleteUser = (user: User) => {
-    // Cannot delete yourself
     if (user.user_id === currentUser?.user_id) return false;
-    // Cannot delete main admin
     if (user.email === MAIN_ADMIN_EMAIL) return false;
     return true;
   };
@@ -219,13 +253,18 @@ const Users: React.FC = () => {
                   <Input id="email" name="email" type="email" value={formData.email} disabled />
                 </div>
               </div>
-              <Button type="submit" disabled={isLoading} className="w-full gradient-primary text-primary-foreground">
-                {isLoading ? (
-                  <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Salvando...</>
-                ) : (
-                  <><LordIcon icon="save" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />Salvar Alterações</>
-                )}
-              </Button>
+              <div className="flex gap-2">
+                <Button type="submit" disabled={isLoading} className="flex-1 gradient-primary text-primary-foreground">
+                  {isLoading ? (
+                    <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Salvando...</>
+                  ) : (
+                    <><LordIcon icon="save" size={16} trigger="hover" colors={{ primary: '#ffffff', secondary: '#ffffff' }} />Salvar Alterações</>
+                  )}
+                </Button>
+                <Button type="button" variant="outline" onClick={() => openPasswordDialog()}>
+                  Alterar Senha
+                </Button>
+              </div>
             </form>
           </CardContent>
         </Card>
@@ -269,12 +308,15 @@ const Users: React.FC = () => {
                   <p className="text-sm text-muted-foreground truncate">{user.email}</p>
                 </div>
                 
-                <div className="flex items-center gap-2">
-                  <Button variant="ghost" size="icon" onClick={() => openEditModal(user)}>
+                <div className="flex items-center gap-1">
+                  <Button variant="ghost" size="icon" onClick={() => openEditModal(user)} title="Editar">
                     <LordIcon icon="edit" size={16} trigger="hover" colors={{ primary: '#121331', secondary: '#08a88a' }} />
                   </Button>
+                  <Button variant="ghost" size="icon" onClick={() => openPasswordDialog(user)} title="Alterar Senha">
+                    <LordIcon icon="lock" size={16} trigger="hover" colors={{ primary: '#121331', secondary: '#f59e0b' }} />
+                  </Button>
                   {canDeleteUser(user) && (
-                    <Button variant="ghost" size="icon" onClick={() => confirmDelete(user)}>
+                    <Button variant="ghost" size="icon" onClick={() => confirmDelete(user)} title="Excluir">
                       <LordIcon icon="trash" size={16} trigger="hover" colors={{ primary: '#ef4444', secondary: '#ef4444' }} />
                     </Button>
                   )}
@@ -346,6 +388,34 @@ const Users: React.FC = () => {
           <DialogFooter>
             <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>Cancelar</Button>
             <Button variant="destructive" onClick={handleDelete}>Excluir</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Password Change Dialog */}
+      <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+        <DialogContent className="max-w-sm">
+          <DialogHeader>
+            <DialogTitle>Alterar Senha</DialogTitle>
+            <DialogDescription>
+              {passwordTarget ? `Alterar senha de ${passwordTarget.name}` : 'Digite sua nova senha'}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4">
+            <div className="space-y-2">
+              <Label htmlFor="newPassword">Nova Senha *</Label>
+              <Input id="newPassword" type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} minLength={6} placeholder="Mínimo 6 caracteres" />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="confirmPassword">Confirmar Senha *</Label>
+              <Input id="confirmPassword" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} minLength={6} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>Cancelar</Button>
+            <Button onClick={handleChangePassword} disabled={isChangingPassword || !newPassword || !confirmPassword} className="gradient-primary text-primary-foreground">
+              {isChangingPassword ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Alterando...</> : 'Alterar Senha'}
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
