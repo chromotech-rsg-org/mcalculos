@@ -128,12 +128,6 @@ const Login: React.FC = () => {
               )}
             </Button>
 
-            <p className="text-sm text-muted-foreground text-center">
-              Não tem uma conta?{' '}
-              <Link to="/register" className="text-primary font-medium hover:underline">
-                Cadastre-se
-              </Link>
-            </p>
           </CardFooter>
         </form>
       </Card>
