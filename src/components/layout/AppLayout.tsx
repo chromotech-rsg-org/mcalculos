@@ -4,8 +4,12 @@ import { useAuth } from '@/contexts/AuthContext';
 import Sidebar from './Sidebar';
 
 const AppLayout: React.FC = () => {
-  const { isLoggedIn } = useAuth();
+  const { isLoggedIn, isLoading } = useAuth();
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  if (isLoading) {
+    return <div className="min-h-screen flex items-center justify-center"><div className="h-8 w-8 border-4 border-primary border-t-transparent rounded-full animate-spin" /></div>;
+  }
 
   if (!isLoggedIn) {
     return <Navigate to="/login" replace />;

@@ -1,106 +1,131 @@
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { User, AuthState } from '@/types';
-import { getAuthState, setAuthState, clearAuth, findUserByEmail, saveUser, generateId, initializeDefaultUsers } from '@/lib/storage';
+import { User, UserRole } from '@/types';
+import { supabase } from '@/integrations/supabase/client';
 
 interface AuthContextType {
   isLoggedIn: boolean;
   currentUser: User | null;
-  login: (email: string, password: string) => { success: boolean; message: string };
-  register: (userData: Omit<User, 'id' | 'createdAt' | 'role'>) => { success: boolean; message: string };
-  logout: () => void;
-  updateUser: (userData: Partial<User>) => void;
+  login: (email: string, password: string) => Promise<{ success: boolean; message: string }>;
+  register: (userData: { name: string; email: string; password: string }) => Promise<{ success: boolean; message: string }>;
+  logout: () => Promise<void>;
+  updateUser: (userData: Partial<User>) => Promise<void>;
+  isLoading: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
 
 export const AuthProvider: React.FC<{ children: ReactNode }> = ({ children }) => {
-  const [authState, setAuthStateLocal] = useState<AuthState>({
-    isLoggedIn: false,
-    currentUser: null,
-  });
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const fetchUserProfile = async (userId: string, email: string): Promise<User | null> => {
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+
+      const { data: roles } = await supabase
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', userId);
+
+      const role: UserRole = roles?.some(r => r.role === 'admin') ? 'admin' : 'user';
+
+      return {
+        id: profile?.id || userId,
+        user_id: userId,
+        name: profile?.name || '',
+        email,
+        role,
+        created_at: profile?.created_at || new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      return null;
+    }
+  };
 
   useEffect(() => {
-    try {
-      // Initialize default admin user
-      initializeDefaultUsers();
-      
-      const savedState = getAuthState();
-      setAuthStateLocal(savedState);
-    } catch (error) {
-      console.error('Error initializing auth:', error);
-      // If localStorage is corrupted/full, start fresh
-      try {
-        clearAuth();
-      } catch (e) {
-        // ignore
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (event, session) => {
+        if (session?.user) {
+          const user = await fetchUserProfile(session.user.id, session.user.email || '');
+          setCurrentUser(user);
+        } else {
+          setCurrentUser(null);
+        }
+        setIsLoading(false);
       }
-      setAuthStateLocal({ isLoggedIn: false, currentUser: null });
-    }
+    );
+
+    supabase.auth.getSession().then(async ({ data: { session } }) => {
+      if (session?.user) {
+        const user = await fetchUserProfile(session.user.id, session.user.email || '');
+        setCurrentUser(user);
+      }
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
-  const login = (email: string, _password: string): { success: boolean; message: string } => {
-    const user = findUserByEmail(email);
-    
-    if (!user) {
-      return { success: false, message: 'Usuário não encontrado. Cadastre-se primeiro.' };
+  const login = async (email: string, password: string): Promise<{ success: boolean; message: string }> => {
+    const { error } = await supabase.auth.signInWithPassword({ email, password });
+    if (error) {
+      return { success: false, message: error.message === 'Invalid login credentials' ? 'Email ou senha incorretos.' : error.message };
     }
-    
-    // Simulated login - no real password check
-    const newState: AuthState = { isLoggedIn: true, currentUser: user };
-    setAuthState(newState);
-    setAuthStateLocal(newState);
-    
     return { success: true, message: 'Login realizado com sucesso!' };
   };
 
-  const register = (userData: Omit<User, 'id' | 'createdAt' | 'role'>): { success: boolean; message: string } => {
-    const existingUser = findUserByEmail(userData.email);
-    
-    if (existingUser) {
-      return { success: false, message: 'Este email já está cadastrado.' };
+  const register = async (userData: { name: string; email: string; password: string }): Promise<{ success: boolean; message: string }> => {
+    const { error } = await supabase.auth.signUp({
+      email: userData.email,
+      password: userData.password,
+      options: {
+        data: { name: userData.name },
+        emailRedirectTo: window.location.origin,
+      },
+    });
+
+    if (error) {
+      if (error.message.includes('already registered')) {
+        return { success: false, message: 'Este email já está cadastrado.' };
+      }
+      return { success: false, message: error.message };
     }
-    
-    const newUser: User = {
-      ...userData,
-      id: generateId(),
-      role: 'user',
-      createdAt: new Date().toISOString(),
-    };
-    
-    saveUser(newUser);
-    
-    const newState: AuthState = { isLoggedIn: true, currentUser: newUser };
-    setAuthState(newState);
-    setAuthStateLocal(newState);
-    
     return { success: true, message: 'Cadastro realizado com sucesso!' };
   };
 
-  const logout = () => {
-    clearAuth();
-    setAuthStateLocal({ isLoggedIn: false, currentUser: null });
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setCurrentUser(null);
   };
 
-  const updateUser = (userData: Partial<User>) => {
-    if (!authState.currentUser) return;
+  const updateUser = async (userData: Partial<User>) => {
+    if (!currentUser) return;
     
-    const updatedUser: User = { ...authState.currentUser, ...userData };
-    saveUser(updatedUser);
-    
-    const newState: AuthState = { isLoggedIn: true, currentUser: updatedUser };
-    setAuthState(newState);
-    setAuthStateLocal(newState);
+    const { error } = await supabase
+      .from('profiles')
+      .update({ name: userData.name })
+      .eq('user_id', currentUser.user_id);
+
+    if (!error && userData.name) {
+      setCurrentUser(prev => prev ? { ...prev, name: userData.name! } : null);
+    }
   };
 
   return (
     <AuthContext.Provider
       value={{
-        isLoggedIn: authState.isLoggedIn,
-        currentUser: authState.currentUser,
+        isLoggedIn: !!currentUser,
+        currentUser,
         login,
         register,
         logout,
         updateUser,
+        isLoading,
       }}
     >
       {children}

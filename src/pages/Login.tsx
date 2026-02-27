@@ -11,7 +11,7 @@ import LordIcon from '@/components/ui/lord-icon';
 import logo from '@/assets/logo.jpeg';
 
 const Login: React.FC = () => {
-  const { isLoggedIn, login } = useAuth();
+  const { isLoggedIn, login, isLoading: authLoading } = useAuth();
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -26,9 +26,7 @@ const Login: React.FC = () => {
     e.preventDefault();
     setIsLoading(true);
 
-    await new Promise(resolve => setTimeout(resolve, 500));
-
-    const result = login(email, password);
+    const result = await login(email, password);
     
     if (result.success) {
       toast({
@@ -108,15 +106,6 @@ const Login: React.FC = () => {
                   {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
                 </button>
               </div>
-            </div>
-
-            <div className="text-right">
-              <Link
-                to="/forgot-password"
-                className="text-sm text-primary hover:underline"
-              >
-                Esqueceu a senha?
-              </Link>
             </div>
           </CardContent>
 
