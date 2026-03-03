@@ -4,7 +4,7 @@ import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
 import { Command, CommandEmpty, CommandGroup, CommandInput, CommandItem, CommandList } from '@/components/ui/command';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
-import { ScrollArea } from '@/components/ui/scroll-area';
+
 
 interface SearchableFieldSelectProps {
   value: string;
@@ -45,7 +45,7 @@ const SearchableFieldSelect: React.FC<SearchableFieldSelectProps> = ({
       <PopoverContent className="w-[300px] p-0 z-50" align="start">
         <Command>
           <CommandInput placeholder="Buscar..." className="h-8 text-xs" />
-          <CommandList>
+          <CommandList className="max-h-[250px] overflow-y-auto">
             <CommandEmpty>Nenhum resultado.</CommandEmpty>
             <CommandGroup>
               {/* Custom option first */}
@@ -67,29 +67,27 @@ const SearchableFieldSelect: React.FC<SearchableFieldSelectProps> = ({
                 <Pencil className="mr-2 h-3 w-3 text-muted-foreground" />
                 <span className="italic text-muted-foreground">✏️ Digitar personalizado...</span>
               </CommandItem>
-              <ScrollArea className="max-h-[200px]">
-                {options.map((opt) => (
-                  <CommandItem
-                    key={opt}
-                    value={opt}
-                    onSelect={() => {
-                      onSelect(opt);
-                      setOpen(false);
-                    }}
-                    className="text-xs"
-                  >
-                    <Check
-                      className={cn(
-                        'mr-2 h-3 w-3',
-                        value === opt ? 'opacity-100' : 'opacity-0'
-                      )}
-                    />
-                    <span className={cn(value === opt && 'font-bold', 'truncate')}>
-                      {opt.length > 60 ? opt.substring(0, 60) + '…' : opt}
-                    </span>
-                  </CommandItem>
-                ))}
-              </ScrollArea>
+              {options.map((opt) => (
+                <CommandItem
+                  key={opt}
+                  value={opt}
+                  onSelect={() => {
+                    onSelect(opt);
+                    setOpen(false);
+                  }}
+                  className="text-xs"
+                >
+                  <Check
+                    className={cn(
+                      'mr-2 h-3 w-3',
+                      value === opt ? 'opacity-100' : 'opacity-0'
+                    )}
+                  />
+                  <span className={cn(value === opt && 'font-bold', 'truncate')}>
+                    {opt.length > 60 ? opt.substring(0, 60) + '…' : opt}
+                  </span>
+                </CommandItem>
+              ))}
             </CommandGroup>
           </CommandList>
         </Command>
