@@ -196,10 +196,6 @@ const Documents: React.FC = () => {
                       <p className="font-medium truncate">{doc.name}</p>
                       <p className="text-sm text-muted-foreground truncate">{doc.description || 'Sem descrição'}</p>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                        <span>{doc.files.length} arquivo(s)</span>
-                        <span>•</span>
-                        <span>{formatFileSize(doc.files.reduce((acc, f) => acc + f.size, 0))}</span>
-                        <span>•</span>
                         <span>{new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
                       </div>
                     </div>
