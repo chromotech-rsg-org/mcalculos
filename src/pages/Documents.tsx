@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
-import { getDocuments, deleteDocument } from '@/lib/supabase-storage';
+import { getDocuments, getDocumentById, deleteDocument } from '@/lib/supabase-storage';
 import { Document } from '@/types';
 import UploadModal from '@/components/documents/UploadModal';
 import ExportColumnSelector from '@/components/documents/ExportColumnSelector';
