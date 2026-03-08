@@ -746,7 +746,7 @@ const detectEventHeader = (lines: LayoutLine[]): {
     // Layout A: "Código" / "Cód." + "Descrição" + "Vencimentos/Proventos"
     const hasCodigo = /C[oó]d(?:igo)?\.?/i.test(text);
     const hasDescricao = /Descri[cç][aã]o/i.test(text);
-    const hasVenc = /Vencimentos|Proventos/i.test(text);
+    const hasVenc = /Vencimento(?:s)?|Proventos/i.test(text);
     
     // Layout B: "Evento" + "Discriminação" + "Proventos"
     const hasEvento = /\bEvento\b/i.test(text);
@@ -757,7 +757,10 @@ const detectEventHeader = (lines: LayoutLine[]): {
 
     // Layout D: "CÓD." + "REF" + "VENCIMENTOS" (abbreviated headers)
     const hasRef = /\bRef(?:er[eê]ncia)?\.?\b/i.test(text);
-    const hasDescontos = /\bDescontos?\b/i.test(text);
+    const hasDescontos = /\bDesconto(?:s)?\b/i.test(text);
+    
+    // Layout E: "Verba" + "Descrição" + "Vencimento" (SBB format)
+    const hasVerba = /\bVerba\b/i.test(text);
     
     const isHeader = 
       (hasCodigo && hasDescricao && hasVenc) ||
@@ -765,7 +768,9 @@ const detectEventHeader = (lines: LayoutLine[]): {
       (hasDiscParcelas && hasVenc) ||
       (hasCodigo && hasVenc) ||
       (hasCodigo && hasDescontos) ||
-      (hasEvento && hasVenc);
+      (hasEvento && hasVenc) ||
+      (hasVerba && hasDescricao && hasVenc) ||
+      (hasVerba && hasDescontos);
     
     if (isHeader) {
       let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Proventos');
