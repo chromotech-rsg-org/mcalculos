@@ -795,7 +795,7 @@ const detectEventHeader = (lines: LayoutLine[]): {
       if (vencX === null) {
         for (let k = Math.max(0, i - 3); k <= Math.min(lines.length - 1, i + 3); k++) {
           if (k === i) continue;
-          const nearbyVencX = findColumnX(lines[k], 'Vencimentos') || findColumnX(lines[k], 'Proventos');
+          const nearbyVencX = findColumnX(lines[k], 'Vencimentos') || findColumnX(lines[k], 'Vencimento') || findColumnX(lines[k], 'Proventos');
           if (nearbyVencX !== null) {
             vencX = nearbyVencX;
             break;
