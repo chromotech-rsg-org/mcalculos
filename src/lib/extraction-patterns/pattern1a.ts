@@ -773,7 +773,7 @@ const detectEventHeader = (lines: LayoutLine[]): {
       (hasVerba && hasDescontos);
     
     if (isHeader) {
-      let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Proventos');
+      let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Vencimento') || findColumnX(lines[i], 'Proventos');
       let descX = findColumnX(lines[i], 'Descontos') || findColumnX(lines[i], 'Desconto');
       const refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref');
       

@@ -3,7 +3,10 @@ import { Document, DocumentFile, ExtractionTemplate } from '@/types';
 
 // Documents
 export const getDocuments = async (userId?: string): Promise<Document[]> => {
-  let query = supabase.from('documents').select('*').order('created_at', { ascending: false });
+  // Light query: exclude heavy files (base64) and extracted_data columns for fast list loading
+  let query = supabase.from('documents')
+    .select('id, name, description, status, created_at, updated_at, payslip_pattern, template_id, user_id')
+    .order('created_at', { ascending: false });
   if (userId) {
     query = query.eq('user_id', userId);
   }
@@ -12,7 +15,7 @@ export const getDocuments = async (userId?: string): Promise<Document[]> => {
     console.error('Error fetching documents:', error);
     return [];
   }
-  return (data || []).map(mapDocFromDb);
+  return (data || []).map(row => mapDocFromDb({ ...row, files: [], extracted_data: null }));
 };
 
 export const getDocumentById = async (docId: string): Promise<Document | null> => {
