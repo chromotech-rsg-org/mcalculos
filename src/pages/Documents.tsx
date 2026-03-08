@@ -219,9 +219,10 @@ const Documents: React.FC = () => {
                         <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); downloadFile(doc); }}><Download className="h-5 w-5 text-secondary" /></Button>
                       </TooltipTrigger><TooltipContent>Baixar PDF</TooltipContent></Tooltip>
                       <Tooltip><TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" disabled={doc.status !== 'extracted'} onClick={(e) => {
+                        <Button variant="ghost" size="icon" disabled={doc.status !== 'extracted'} onClick={async (e) => {
                           e.stopPropagation();
-                          if (doc.extracted_data) { setExportDoc(doc); setExportDialogOpen(true); }
+                          const fullDoc = await getDocumentById(doc.id);
+                          if (fullDoc?.extracted_data) { setExportDoc(fullDoc); setExportDialogOpen(true); }
                         }}><FileSpreadsheet className="h-5 w-5 text-emerald-600" /></Button>
                       </TooltipTrigger><TooltipContent>Exportar dados</TooltipContent></Tooltip>
                       <Tooltip><TooltipTrigger asChild>
