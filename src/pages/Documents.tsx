@@ -76,9 +76,11 @@ const Documents: React.FC = () => {
     setDeleteDialogOpen(true);
   };
 
-  const downloadFile = (doc: Document) => {
-    if (doc.files.length > 0) {
-      const file = doc.files[0];
+  const downloadFile = async (doc: Document) => {
+    // Lazy-load full document for download
+    const fullDoc = await getDocumentById(doc.id);
+    if (fullDoc && fullDoc.files.length > 0) {
+      const file = fullDoc.files[0];
       const link = document.createElement('a');
       link.href = file.base64;
       link.download = file.name;
