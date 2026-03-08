@@ -372,9 +372,11 @@ const extractEmployee = (lines: LayoutLine[]): {
     const text = lines[i].text;
     if (
       (/C[oó]d(?:igo)?\.?/i.test(text) && /Descri[cç][aã]o/i.test(text)) ||
-      (/C[oó]d(?:igo)?\.?/i.test(text) && /Vencimentos|Proventos/i.test(text)) ||
+      (/C[oó]d(?:igo)?\.?/i.test(text) && /Vencimento(?:s)?|Proventos/i.test(text)) ||
       (/Evento/i.test(text) && /Discrimina[cç][aã]o/i.test(text)) ||
-      (/Evento/i.test(text) && /Proventos/i.test(text))
+      (/Evento/i.test(text) && /Proventos/i.test(text)) ||
+      (/\bVerba\b/i.test(text) && /Descri[cç][aã]o/i.test(text)) ||
+      (/\bVerba\b/i.test(text) && /Vencimento(?:s)?/i.test(text))
     ) {
       tableHeaderIdx = i;
       break;
@@ -746,7 +748,7 @@ const detectEventHeader = (lines: LayoutLine[]): {
     // Layout A: "Código" / "Cód." + "Descrição" + "Vencimentos/Proventos"
     const hasCodigo = /C[oó]d(?:igo)?\.?/i.test(text);
     const hasDescricao = /Descri[cç][aã]o/i.test(text);
-    const hasVenc = /Vencimentos|Proventos/i.test(text);
+    const hasVenc = /Vencimento(?:s)?|Proventos/i.test(text);
     
     // Layout B: "Evento" + "Discriminação" + "Proventos"
     const hasEvento = /\bEvento\b/i.test(text);
@@ -757,7 +759,10 @@ const detectEventHeader = (lines: LayoutLine[]): {
 
     // Layout D: "CÓD." + "REF" + "VENCIMENTOS" (abbreviated headers)
     const hasRef = /\bRef(?:er[eê]ncia)?\.?\b/i.test(text);
-    const hasDescontos = /\bDescontos?\b/i.test(text);
+    const hasDescontos = /\bDesconto(?:s)?\b/i.test(text);
+    
+    // Layout E: "Verba" + "Descrição" + "Vencimento" (SBB format)
+    const hasVerba = /\bVerba\b/i.test(text);
     
     const isHeader = 
       (hasCodigo && hasDescricao && hasVenc) ||
@@ -765,10 +770,12 @@ const detectEventHeader = (lines: LayoutLine[]): {
       (hasDiscParcelas && hasVenc) ||
       (hasCodigo && hasVenc) ||
       (hasCodigo && hasDescontos) ||
-      (hasEvento && hasVenc);
+      (hasEvento && hasVenc) ||
+      (hasVerba && hasDescricao && hasVenc) ||
+      (hasVerba && hasDescontos);
     
     if (isHeader) {
-      let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Proventos');
+      let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Vencimento') || findColumnX(lines[i], 'Proventos');
       let descX = findColumnX(lines[i], 'Descontos') || findColumnX(lines[i], 'Desconto');
       const refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref');
       
@@ -788,7 +795,7 @@ const detectEventHeader = (lines: LayoutLine[]): {
       if (vencX === null) {
         for (let k = Math.max(0, i - 3); k <= Math.min(lines.length - 1, i + 3); k++) {
           if (k === i) continue;
-          const nearbyVencX = findColumnX(lines[k], 'Vencimentos') || findColumnX(lines[k], 'Proventos');
+          const nearbyVencX = findColumnX(lines[k], 'Vencimentos') || findColumnX(lines[k], 'Vencimento') || findColumnX(lines[k], 'Proventos');
           if (nearbyVencX !== null) {
             vencX = nearbyVencX;
             break;

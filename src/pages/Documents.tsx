@@ -10,7 +10,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { useToast } from '@/hooks/use-toast';
-import { getDocuments, deleteDocument } from '@/lib/supabase-storage';
+import { getDocuments, getDocumentById, deleteDocument } from '@/lib/supabase-storage';
 import { Document } from '@/types';
 import UploadModal from '@/components/documents/UploadModal';
 import ExportColumnSelector from '@/components/documents/ExportColumnSelector';
@@ -76,9 +76,11 @@ const Documents: React.FC = () => {
     setDeleteDialogOpen(true);
   };
 
-  const downloadFile = (doc: Document) => {
-    if (doc.files.length > 0) {
-      const file = doc.files[0];
+  const downloadFile = async (doc: Document) => {
+    // Lazy-load full document for download
+    const fullDoc = await getDocumentById(doc.id);
+    if (fullDoc && fullDoc.files.length > 0) {
+      const file = fullDoc.files[0];
       const link = document.createElement('a');
       link.href = file.base64;
       link.download = file.name;
@@ -95,13 +97,6 @@ const Documents: React.FC = () => {
     }
   };
 
-  const formatFileSize = (bytes: number): string => {
-    if (bytes === 0) return '0 Bytes';
-    const k = 1024;
-    const sizes = ['Bytes', 'KB', 'MB', 'GB'];
-    const i = Math.floor(Math.log(bytes) / Math.log(k));
-    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
-  };
 
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(true); }, []);
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); setIsDragging(false); }, []);
@@ -196,10 +191,6 @@ const Documents: React.FC = () => {
                       <p className="font-medium truncate">{doc.name}</p>
                       <p className="text-sm text-muted-foreground truncate">{doc.description || 'Sem descrição'}</p>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
-                        <span>{doc.files.length} arquivo(s)</span>
-                        <span>•</span>
-                        <span>{formatFileSize(doc.files.reduce((acc, f) => acc + f.size, 0))}</span>
-                        <span>•</span>
                         <span>{new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
                       </div>
                     </div>
@@ -221,9 +212,10 @@ const Documents: React.FC = () => {
                         <Button variant="ghost" size="icon" onClick={(e) => { e.stopPropagation(); downloadFile(doc); }}><Download className="h-5 w-5 text-secondary" /></Button>
                       </TooltipTrigger><TooltipContent>Baixar PDF</TooltipContent></Tooltip>
                       <Tooltip><TooltipTrigger asChild>
-                        <Button variant="ghost" size="icon" disabled={doc.status !== 'extracted'} onClick={(e) => {
+                        <Button variant="ghost" size="icon" disabled={doc.status !== 'extracted'} onClick={async (e) => {
                           e.stopPropagation();
-                          if (doc.extracted_data) { setExportDoc(doc); setExportDialogOpen(true); }
+                          const fullDoc = await getDocumentById(doc.id);
+                          if (fullDoc?.extracted_data) { setExportDoc(fullDoc); setExportDialogOpen(true); }
                         }}><FileSpreadsheet className="h-5 w-5 text-emerald-600" /></Button>
                       </TooltipTrigger><TooltipContent>Exportar dados</TooltipContent></Tooltip>
                       <Tooltip><TooltipTrigger asChild>
