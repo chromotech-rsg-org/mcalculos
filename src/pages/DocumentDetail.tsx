@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { getDocumentById, saveDocument, deleteDocument } from '@/lib/supabase-storage';
 import { Document, ExtractedData, ExtractedMonth } from '@/types';
+import { buildTabsFromMonths } from '@/lib/build-tabs';
 import { extractDataFromPDF, extractDataFromImage } from '@/lib/extraction';
 import { exportToExcel, exportToCSV } from '@/lib/export';
 import DataTableView from '@/components/documents/DataTableView';
