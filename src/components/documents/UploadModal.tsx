@@ -9,7 +9,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
 import { getDocuments, saveDocument, generateId, getTemplates } from '@/lib/supabase-storage';
-import { Document, DocumentFile, ExtractionTemplate } from '@/types';
+import { Document, DocumentFile, ExtractionTemplate, TabType } from '@/types';
 
 interface UploadModalProps {
   open: boolean;
