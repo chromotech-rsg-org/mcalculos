@@ -95,7 +95,7 @@ export interface ExtractionTemplate {
   name: string;
   field_mappings: FieldMapping[];
   created_at: string;
-  updated_at: string;
+  extractionOptions?: ExtractionOptions;
 }
 
 export interface Document {
