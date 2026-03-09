@@ -70,7 +70,12 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
   const [rowsPerPage, setRowsPerPage] = useState(10);
   const [currentPage, setCurrentPage] = useState(0);
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>([]);
+  const [activeTab, setActiveTab] = useState<string>('legacy');
 
+  // Check if we have new tab data structure
+  const hasTabData = data.tabs && Object.keys(data.tabs).length > 0;
+  
+  // Legacy logic for backwards compatibility
   const maxEvents = useMemo(() => {
     let max = 0;
     for (const m of data.months) {
@@ -82,6 +87,19 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
   const fieldKeys = useMemo(() => collectFieldKeys(data), [data]);
   const baseColumns = useMemo(() => getDynamicBaseColumns(fieldKeys), [fieldKeys]);
   const allColumns = useMemo(() => [...baseColumns, ...getEventColumns(maxEvents)], [baseColumns, maxEvents]);
+
+  // New tab-based data
+  const availableTabs = useMemo(() => {
+    if (!hasTabData) return [];
+    return Object.keys(data.tabs || {});
+  }, [hasTabData, data.tabs]);
+  
+  // Set default active tab
+  useEffect(() => {
+    if (hasTabData && availableTabs.length > 0 && activeTab === 'legacy') {
+      setActiveTab(availableTabs[0]);
+    }
+  }, [hasTabData, availableTabs, activeTab]);
 
   // Load saved preferences
   useEffect(() => {
