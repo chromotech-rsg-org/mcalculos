@@ -132,11 +132,10 @@ const DocumentDetail: React.FC = () => {
         allMonths = [...allMonths, ...extractedData.months];
       }
       
-      // Generate tab data for Pattern 1a documents with selected tabs
+      // Always generate all 3 tabs for Pattern 1a documents
       let tabs;
-      const extractionOptions = doc.extractionOptions;
-      if ((detectedPattern === '1a' || selectedPattern === '1a') && extractionOptions?.selectedTabs) {
-        tabs = buildTabsFromMonths(allMonths, extractionOptions.selectedTabs);
+      if (detectedPattern === '1a' || selectedPattern === '1a') {
+        tabs = buildTabsFromMonths(allMonths, ['vencimentos', 'descontos', 'quantidade']);
       }
       
       const finalData: ExtractedData = {
