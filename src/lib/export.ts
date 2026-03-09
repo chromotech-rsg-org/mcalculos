@@ -88,6 +88,37 @@ const getOrderedHeaders = (fieldKeys: string[], maxEvents: number): string[] => 
 };
 
 export const exportToExcel = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
+  // Check if we have new tab structure
+  if (data.tabs && Object.keys(data.tabs).length > 0) {
+    const workbook = XLSX.utils.book_new();
+    
+    // Create a worksheet for each tab
+    Object.entries(data.tabs).forEach(([tabType, tabData]) => {
+      if (!tabData) return;
+      
+      const headers = selectedColumns ? 
+        tabData.columns.filter(h => selectedColumns.includes(h)) : 
+        tabData.columns;
+      
+      const filteredRows = tabData.rows.map(row => {
+        const filtered: Record<string, string> = {};
+        headers.forEach(h => { filtered[h] = row[h] || ''; });
+        return filtered;
+      });
+      
+      const worksheet = XLSX.utils.json_to_sheet(filteredRows, { header: headers });
+      worksheet['!cols'] = headers.map(h => ({ wch: Math.min(Math.max(h.length + 2, 12), 40) }));
+      
+      const sheetName = tabType === 'vencimentos' ? 'Vencimentos' : 
+                       tabType === 'descontos' ? 'Descontos' : 'QTDE';
+      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+    });
+    
+    XLSX.writeFile(workbook, `${filename}.xlsx`);
+    return;
+  }
+  
+  // Legacy export for backwards compatibility
   const maxEvents = getMaxEvents(data);
   const fieldKeys = collectFieldKeys(data);
   const rows = buildExcelRows(data, fieldKeys, maxEvents);
