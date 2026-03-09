@@ -19,6 +19,7 @@ export type Database = {
           created_at: string
           description: string | null
           extracted_data: Json | null
+          extraction_options: Json | null
           files: Json
           id: string
           name: string
@@ -32,6 +33,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           extracted_data?: Json | null
+          extraction_options?: Json | null
           files?: Json
           id?: string
           name: string
@@ -45,6 +47,7 @@ export type Database = {
           created_at?: string
           description?: string | null
           extracted_data?: Json | null
+          extraction_options?: Json | null
           files?: Json
           id?: string
           name?: string

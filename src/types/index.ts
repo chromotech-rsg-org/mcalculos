@@ -1,4 +1,5 @@
 export type UserRole = 'admin' | 'user';
+export type TabType = 'vencimentos' | 'descontos' | 'quantidade';
 
 export interface User {
   id: string;
@@ -29,6 +30,15 @@ export interface PayslipEvent {
   referencia: string;
   vencimento: string;
   desconto: string;
+}
+
+export interface TabData {
+  columns: string[];
+  rows: Record<string, string>[];
+}
+
+export interface ExtractionOptions {
+  selectedTabs: TabType[];
 }
 
 export interface ExtractedMonth {

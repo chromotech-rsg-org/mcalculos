@@ -300,7 +300,7 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
 
 // Component for rendering individual tab data
 const TabDataTable: React.FC<{
-  tabData: import('@/types').TabData;
+  tabData: TabData;
   search: string;
   setSearch: (search: string) => void;
   rowsPerPage: number;
