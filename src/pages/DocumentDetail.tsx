@@ -132,6 +132,13 @@ const DocumentDetail: React.FC = () => {
         allMonths = [...allMonths, ...extractedData.months];
       }
       
+      // Generate tab data for Pattern 1a documents with selected tabs
+      let tabs;
+      const extractionOptions = doc.extractionOptions;
+      if ((detectedPattern === '1a' || selectedPattern === '1a') && extractionOptions?.selectedTabs) {
+        tabs = buildTabsFromMonths(allMonths, extractionOptions.selectedTabs);
+      }
+      
       const finalData: ExtractedData = {
         employeeName,
         cnpj,
@@ -139,6 +146,8 @@ const DocumentDetail: React.FC = () => {
         payslipPattern: detectedPattern || (selectedPattern !== 'auto' ? selectedPattern : undefined),
         months: allMonths,
         extractedAt: new Date().toISOString(),
+        tabs,
+        extractionOptions,
       };
       
       const finalDoc = {
