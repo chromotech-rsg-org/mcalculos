@@ -13,6 +13,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
 import { getDocumentById, saveDocument, deleteDocument } from '@/lib/supabase-storage';
 import { Document, ExtractedData, ExtractedMonth } from '@/types';
+import { buildTabsFromMonths } from '@/lib/build-tabs';
 import { extractDataFromPDF, extractDataFromImage } from '@/lib/extraction';
 import { exportToExcel, exportToCSV } from '@/lib/export';
 import DataTableView from '@/components/documents/DataTableView';
@@ -131,6 +132,13 @@ const DocumentDetail: React.FC = () => {
         allMonths = [...allMonths, ...extractedData.months];
       }
       
+      // Generate tab data for Pattern 1a documents with selected tabs
+      let tabs;
+      const extractionOptions = doc.extractionOptions;
+      if ((detectedPattern === '1a' || selectedPattern === '1a') && extractionOptions?.selectedTabs) {
+        tabs = buildTabsFromMonths(allMonths, extractionOptions.selectedTabs);
+      }
+      
       const finalData: ExtractedData = {
         employeeName,
         cnpj,
@@ -138,6 +146,8 @@ const DocumentDetail: React.FC = () => {
         payslipPattern: detectedPattern || (selectedPattern !== 'auto' ? selectedPattern : undefined),
         months: allMonths,
         extractedAt: new Date().toISOString(),
+        tabs,
+        extractionOptions,
       };
       
       const finalDoc = {

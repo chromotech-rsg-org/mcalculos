@@ -100,7 +100,6 @@ export const getTemplateById = async (templateId: string): Promise<ExtractionTem
     name: data.name,
     field_mappings: data.field_mappings as any || [],
     created_at: data.created_at,
-    updated_at: data.updated_at,
   };
 };
 

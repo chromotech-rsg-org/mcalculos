@@ -1,4 +1,5 @@
 export type UserRole = 'admin' | 'user';
+export type TabType = 'vencimentos' | 'descontos' | 'quantidade';
 
 export interface User {
   id: string;
@@ -29,6 +30,15 @@ export interface PayslipEvent {
   referencia: string;
   vencimento: string;
   desconto: string;
+}
+
+export interface TabData {
+  columns: string[];
+  rows: Record<string, string>[];
+}
+
+export interface ExtractionOptions {
+  selectedTabs: TabType[];
 }
 
 export interface ExtractedMonth {
@@ -80,6 +90,12 @@ export interface ExtractedData {
   payslipPattern?: string;
   months: ExtractedMonth[];
   extractedAt: string;
+  tabs?: {
+    vencimentos?: TabData;
+    descontos?: TabData; 
+    quantidade?: TabData;
+  };
+  extractionOptions?: ExtractionOptions;
 }
 
 export interface FieldMapping {
@@ -95,7 +111,7 @@ export interface ExtractionTemplate {
   name: string;
   field_mappings: FieldMapping[];
   created_at: string;
-  updated_at: string;
+  extractionOptions?: ExtractionOptions;
 }
 
 export interface Document {
@@ -110,6 +126,7 @@ export interface Document {
   status: 'pending' | 'extracting' | 'extracted' | 'error';
   created_at: string;
   updated_at: string;
+  extractionOptions?: ExtractionOptions;
 }
 
 export interface AuthState {

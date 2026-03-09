@@ -3,13 +3,14 @@ import { Upload, FileText, X, Loader2, FolderPlus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import { useToast } from '@/hooks/use-toast';
 import { getDocuments, saveDocument, generateId, getTemplates } from '@/lib/supabase-storage';
-import { Document, DocumentFile, ExtractionTemplate } from '@/types';
+import { Document, DocumentFile, ExtractionTemplate, TabType } from '@/types';
 
 interface UploadModalProps {
   open: boolean;
@@ -37,6 +38,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
   const [selectedDocId, setSelectedDocId] = useState<string>('');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [templates, setTemplates] = useState<ExtractionTemplate[]>([]);
+  const [selectedTabs, setSelectedTabs] = useState<TabType[]>(['vencimentos', 'descontos', 'quantidade']);
 
   useEffect(() => {
     if (open) {
@@ -52,6 +54,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
       setPayslipPattern('auto');
       setUploadMode('new');
       setSelectedDocId('');
+      setSelectedTabs(['vencimentos', 'descontos', 'quantidade']);
     } else if (files.length > 0 && !docName) {
       const firstName = files[0].name.replace(/\.[^/.]+$/, '');
       setDocName(firstName);
@@ -124,6 +127,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
           status: 'pending',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          extractionOptions: { selectedTabs },
         };
 
         await saveDocument(newDoc);
@@ -216,6 +220,37 @@ const UploadModal: React.FC<UploadModalProps> = ({
                   </SelectContent>
                 </Select>
               </div>
+              
+              {(payslipPattern === '1a' || payslipPattern === 'auto') && (
+                <div className="space-y-3">
+                  <Label>Abas para extrair</Label>
+                  <div className="space-y-2">
+                    {(['vencimentos', 'descontos', 'quantidade'] as TabType[]).map(tab => (
+                      <div key={tab} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={tab}
+                          checked={selectedTabs.includes(tab)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedTabs(prev => [...prev, tab]);
+                            } else {
+                              setSelectedTabs(prev => prev.filter(t => t !== tab));
+                            }
+                          }}
+                        />
+                        <Label htmlFor={tab} className="text-sm">
+                          {tab === 'vencimentos' && 'Vencimentos'}
+                          {tab === 'descontos' && 'Descontos'}
+                          {tab === 'quantidade' && 'QTDE'}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Selecione quais abas serão geradas na visualização dos dados.
+                  </p>
+                </div>
+              )}
             </>
           )}
 
