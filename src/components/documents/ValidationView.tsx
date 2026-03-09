@@ -149,6 +149,185 @@ interface EventState {
   status: 'pending' | 'validated' | 'ignored';
 }
 
+/** Sub-component for events tab organized by category */
+const EventsTabView: React.FC<{
+  events: EventState[];
+  selectedEvents: Set<string>;
+  allEventsSelected: boolean;
+  someEventsSelected: boolean;
+  selectAllEvents: () => void;
+  deselectAllEvents: () => void;
+  toggleEventSelection: (id: string) => void;
+  toggleEventValidated: (id: string) => void;
+  toggleEventIgnored: (id: string) => void;
+  bulkEventAction: (action: 'validated' | 'ignored' | 'pending') => void;
+  updateEvent: (id: string, updates: Partial<EventState>) => void;
+}> = ({
+  events, selectedEvents, allEventsSelected, someEventsSelected,
+  selectAllEvents, deselectAllEvents, toggleEventSelection,
+  toggleEventValidated, toggleEventIgnored, bulkEventAction, updateEvent,
+}) => {
+  const [subTab, setSubTab] = useState<'vencimentos' | 'descontos' | 'quantidade'>('vencimentos');
+
+  const vencimentoEvents = useMemo(() => events.filter(e => e.vencimento && e.vencimento !== '0' && e.vencimento !== ''), [events]);
+  const descontoEvents = useMemo(() => events.filter(e => e.desconto && e.desconto !== '0' && e.desconto !== ''), [events]);
+  const quantidadeEvents = useMemo(() => events.filter(e => e.referencia && e.referencia !== '0' && e.referencia !== ''), [events]);
+
+  const currentEvents = subTab === 'vencimentos' ? vencimentoEvents : subTab === 'descontos' ? descontoEvents : quantidadeEvents;
+  const valueField = subTab === 'vencimentos' ? 'vencimento' : subTab === 'descontos' ? 'desconto' : 'referencia';
+  const valueLabel = subTab === 'vencimentos' ? 'Vencimento' : subTab === 'descontos' ? 'Desconto' : 'QTDE';
+
+  return (
+    <>
+      {/* Sub-tabs */}
+      <div className="flex gap-1 border-b border-border">
+        {vencimentoEvents.length > 0 && (
+          <button
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${subTab === 'vencimentos' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setSubTab('vencimentos')}
+          >
+            Vencimentos ({vencimentoEvents.length})
+          </button>
+        )}
+        {descontoEvents.length > 0 && (
+          <button
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${subTab === 'descontos' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setSubTab('descontos')}
+          >
+            Descontos ({descontoEvents.length})
+          </button>
+        )}
+        {quantidadeEvents.length > 0 && (
+          <button
+            className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${subTab === 'quantidade' ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'}`}
+            onClick={() => setSubTab('quantidade')}
+          >
+            QTDE ({quantidadeEvents.length})
+          </button>
+        )}
+      </div>
+
+      {/* Bulk selection bar */}
+      <div className="flex items-center gap-3 p-2 bg-muted/30 rounded-md border border-border/50">
+        <button
+          onClick={allEventsSelected ? deselectAllEvents : selectAllEvents}
+          className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
+        >
+          {allEventsSelected ? (
+            <CheckSquare className="h-4 w-4 text-primary" />
+          ) : someEventsSelected ? (
+            <MinusSquare className="h-4 w-4 text-primary" />
+          ) : (
+            <Square className="h-4 w-4" />
+          )}
+          {allEventsSelected ? 'Desmarcar todos' : 'Selecionar todos'}
+        </button>
+
+        {selectedEvents.size > 0 && (
+          <div className="flex items-center gap-1.5 ml-auto">
+            <span className="text-xs text-muted-foreground">{selectedEvents.size} selecionado(s)</span>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => bulkEventAction('validated')}>
+              <Check className="h-3 w-3 mr-1" /> OK
+            </Button>
+            <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => bulkEventAction('ignored')}>
+              <EyeOff className="h-3 w-3 mr-1" /> Ignorar
+            </Button>
+            <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => bulkEventAction('pending')}>
+              Resetar
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* Events table */}
+      <div className="border rounded-md">
+        <ScrollArea className="h-[500px]">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead className="w-10"></TableHead>
+                <TableHead className="text-xs">CÓD.</TableHead>
+                <TableHead className="text-xs">Descrição</TableHead>
+                <TableHead className="text-xs">{valueLabel}</TableHead>
+                <TableHead className="text-xs w-24">Status</TableHead>
+                <TableHead className="text-xs w-24">Ações</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {currentEvents.map(ev => (
+                <TableRow
+                  key={ev.id}
+                  className={
+                    ev.status === 'validated' ? 'bg-primary/5' :
+                    ev.status === 'ignored' ? 'bg-muted/30 opacity-60' : ''
+                  }
+                >
+                  <TableCell>
+                    <Checkbox
+                      checked={selectedEvents.has(ev.id)}
+                      onCheckedChange={() => toggleEventSelection(ev.id)}
+                    />
+                  </TableCell>
+                  <TableCell className="text-xs font-mono">{ev.codigo}</TableCell>
+                  <TableCell>
+                    <Input
+                      value={ev.descricao}
+                      onChange={e => updateEvent(ev.id, { descricao: e.target.value })}
+                      className="h-7 text-xs"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Input
+                      value={ev[valueField]}
+                      onChange={e => updateEvent(ev.id, { [valueField]: e.target.value })}
+                      className="h-7 text-xs w-28"
+                    />
+                  </TableCell>
+                  <TableCell>
+                    <Badge
+                      variant={ev.status === 'validated' ? 'default' : ev.status === 'ignored' ? 'destructive' : 'secondary'}
+                      className="text-[10px]"
+                    >
+                      {ev.status === 'validated' ? 'OK' : ev.status === 'ignored' ? 'Ignorado' : 'Pendente'}
+                    </Badge>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex gap-1">
+                      <Button
+                        size="sm"
+                        variant={ev.status === 'validated' ? 'default' : 'ghost'}
+                        className="h-6 w-6 p-0"
+                        onClick={() => toggleEventValidated(ev.id)}
+                      >
+                        <Check className="h-3 w-3" />
+                      </Button>
+                      <Button
+                        size="sm"
+                        variant={ev.status === 'ignored' ? 'destructive' : 'ghost'}
+                        className="h-6 w-6 p-0"
+                        onClick={() => toggleEventIgnored(ev.id)}
+                      >
+                        <EyeOff className="h-3 w-3" />
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              ))}
+              {currentEvents.length === 0 && (
+                <TableRow>
+                  <TableCell colSpan={6} className="text-center text-sm text-muted-foreground py-8">
+                    Nenhum evento encontrado nesta categoria.
+                  </TableCell>
+                </TableRow>
+              )}
+            </TableBody>
+          </Table>
+        </ScrollArea>
+      </div>
+    </>
+  );
+};
+
 const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
   const { toast } = useToast();
   const [saveDialogOpen, setSaveDialogOpen] = useState(false);
@@ -894,136 +1073,21 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
         </>
       )}
 
-      {/* EVENTS TAB */}
+      {/* EVENTS TAB - organized by Vencimentos / Descontos / QTDE */}
       {activeTab === 'events' && (
-        <>
-          {/* Bulk selection bar for events */}
-          <div className="flex items-center gap-3 p-2 bg-muted/30 rounded-md border border-border/50">
-            <button
-              onClick={allEventsSelected ? deselectAllEvents : selectAllEvents}
-              className="flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors"
-            >
-              {allEventsSelected ? (
-                <CheckSquare className="h-4 w-4 text-primary" />
-              ) : someEventsSelected ? (
-                <MinusSquare className="h-4 w-4 text-primary" />
-              ) : (
-                <Square className="h-4 w-4" />
-              )}
-              {allEventsSelected ? 'Desmarcar todos' : 'Selecionar todos'}
-            </button>
-
-            {selectedEvents.size > 0 && (
-              <div className="flex items-center gap-1.5 ml-auto">
-                <span className="text-xs text-muted-foreground">{selectedEvents.size} selecionado(s)</span>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => bulkEventAction('validated')}>
-                  <Check className="h-3 w-3 mr-1" /> OK
-                </Button>
-                <Button size="sm" variant="outline" className="h-7 text-xs" onClick={() => bulkEventAction('ignored')}>
-                  <EyeOff className="h-3 w-3 mr-1" /> Ignorar
-                </Button>
-                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={() => bulkEventAction('pending')}>
-                  Resetar
-                </Button>
-              </div>
-            )}
-          </div>
-
-          <div className="border rounded-md">
-            <ScrollArea className="h-[500px]">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-10"></TableHead>
-                    <TableHead className="text-xs">CÓD.</TableHead>
-                    <TableHead className="text-xs">Descrição</TableHead>
-                    <TableHead className="text-xs">QTDE.</TableHead>
-                    <TableHead className="text-xs">Vencimentos</TableHead>
-                    <TableHead className="text-xs">Descontos</TableHead>
-                    <TableHead className="text-xs w-24">Status</TableHead>
-                    <TableHead className="text-xs w-24">Ações</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {events.map(ev => (
-                    <TableRow
-                      key={ev.id}
-                      className={
-                        ev.status === 'validated' ? 'bg-primary/5' :
-                        ev.status === 'ignored' ? 'bg-muted/30 opacity-60' : ''
-                      }
-                    >
-                      <TableCell>
-                        <Checkbox
-                          checked={selectedEvents.has(ev.id)}
-                          onCheckedChange={() => toggleEventSelection(ev.id)}
-                        />
-                      </TableCell>
-                      <TableCell className="text-xs font-mono">{ev.codigo}</TableCell>
-                      <TableCell>
-                        <Input
-                          value={ev.descricao}
-                          onChange={e => updateEvent(ev.id, { descricao: e.target.value })}
-                          className="h-7 text-xs"
-                        />
-                      </TableCell>
-                      <TableCell className="text-xs">{ev.referencia}</TableCell>
-                      <TableCell>
-                        <Input
-                          value={ev.vencimento}
-                          onChange={e => updateEvent(ev.id, { vencimento: e.target.value })}
-                          className="h-7 text-xs w-24"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Input
-                          value={ev.desconto}
-                          onChange={e => updateEvent(ev.id, { desconto: e.target.value })}
-                          className="h-7 text-xs w-24"
-                        />
-                      </TableCell>
-                      <TableCell>
-                        <Badge
-                          variant={ev.status === 'validated' ? 'default' : ev.status === 'ignored' ? 'destructive' : 'secondary'}
-                          className="text-[10px]"
-                        >
-                          {ev.status === 'validated' ? 'OK' : ev.status === 'ignored' ? 'Ignorado' : 'Pendente'}
-                        </Badge>
-                      </TableCell>
-                      <TableCell>
-                        <div className="flex gap-1">
-                          <Button
-                            size="sm"
-                            variant={ev.status === 'validated' ? 'default' : 'ghost'}
-                            className="h-6 w-6 p-0"
-                            onClick={() => toggleEventValidated(ev.id)}
-                          >
-                            <Check className="h-3 w-3" />
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant={ev.status === 'ignored' ? 'destructive' : 'ghost'}
-                            className="h-6 w-6 p-0"
-                            onClick={() => toggleEventIgnored(ev.id)}
-                          >
-                            <EyeOff className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  ))}
-                  {events.length === 0 && (
-                    <TableRow>
-                      <TableCell colSpan={8} className="text-center text-sm text-muted-foreground py-8">
-                        Nenhum evento/tabela encontrado neste documento.
-                      </TableCell>
-                    </TableRow>
-                  )}
-                </TableBody>
-              </Table>
-            </ScrollArea>
-          </div>
-        </>
+        <EventsTabView
+          events={events}
+          selectedEvents={selectedEvents}
+          allEventsSelected={allEventsSelected}
+          someEventsSelected={someEventsSelected}
+          selectAllEvents={selectAllEvents}
+          deselectAllEvents={deselectAllEvents}
+          toggleEventSelection={toggleEventSelection}
+          toggleEventValidated={toggleEventValidated}
+          toggleEventIgnored={toggleEventIgnored}
+          bulkEventAction={bulkEventAction}
+          updateEvent={updateEvent}
+        />
       )}
 
       {/* Save Template Dialog */}
