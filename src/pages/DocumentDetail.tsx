@@ -146,7 +146,6 @@ const DocumentDetail: React.FC = () => {
         months: allMonths,
         extractedAt: new Date().toISOString(),
         tabs,
-        extractionOptions,
       };
       
       const finalDoc = {
