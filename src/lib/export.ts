@@ -1,5 +1,6 @@
 import * as XLSX from 'xlsx';
-import { ExtractedData, PayslipEvent } from '@/types';
+import { ExtractedData, PayslipEvent, TabData } from '@/types';
+import { buildTabsFromMonths } from '@/lib/build-tabs';
 
 /**
  * Determine the max number of events across all months
