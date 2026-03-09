@@ -80,6 +80,12 @@ export interface ExtractedData {
   payslipPattern?: string;
   months: ExtractedMonth[];
   extractedAt: string;
+  tabs?: {
+    vencimentos?: TabData;
+    descontos?: TabData; 
+    quantidade?: TabData;
+  };
+  extractionOptions?: ExtractionOptions;
 }
 
 export interface FieldMapping {

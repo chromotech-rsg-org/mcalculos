@@ -54,6 +54,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
       setPayslipPattern('auto');
       setUploadMode('new');
       setSelectedDocId('');
+      setSelectedTabs(['vencimentos', 'descontos', 'quantidade']);
     } else if (files.length > 0 && !docName) {
       const firstName = files[0].name.replace(/\.[^/.]+$/, '');
       setDocName(firstName);
