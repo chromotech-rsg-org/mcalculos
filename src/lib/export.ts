@@ -140,6 +140,34 @@ export const exportToExcel = (data: ExtractedData, filename: string, selectedCol
 };
 
 export const exportToCSV = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
+  // Check if we have new tab structure - export first available tab
+  if (data.tabs && Object.keys(data.tabs).length > 0) {
+    const firstTabData = Object.values(data.tabs)[0];
+    if (!firstTabData) return;
+    
+    const headers = selectedColumns ? 
+      firstTabData.columns.filter(h => selectedColumns.includes(h)) : 
+      firstTabData.columns;
+
+    const csvRows: string[][] = [headers];
+    firstTabData.rows.forEach(row => {
+      csvRows.push(headers.map(h => row[h] || ''));
+    });
+
+    const csvContent = csvRows
+      .map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
+      .join('\n');
+
+    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = `${filename}.csv`;
+    link.click();
+    URL.revokeObjectURL(link.href);
+    return;
+  }
+  
+  // Legacy export for backwards compatibility
   const maxEvents = getMaxEvents(data);
   const fieldKeys = collectFieldKeys(data);
   const rows = buildExcelRows(data, fieldKeys, maxEvents);
