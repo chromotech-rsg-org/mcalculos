@@ -37,6 +37,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
   const [selectedDocId, setSelectedDocId] = useState<string>('');
   const [documents, setDocuments] = useState<Document[]>([]);
   const [templates, setTemplates] = useState<ExtractionTemplate[]>([]);
+  const [selectedTabs, setSelectedTabs] = useState<TabType[]>(['vencimentos', 'descontos', 'quantidade']);
 
   useEffect(() => {
     if (open) {
