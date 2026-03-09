@@ -1,41 +1,43 @@
 import { ExtractedMonth, TabType, TabData } from '@/types';
 
 /**
- * Collect all unique field labels from months[].fields[], preserving first-appearance order.
+ * Collect all unique field keys from months[].fields[], preserving first-appearance order.
  */
-const collectDynamicFieldLabels = (months: ExtractedMonth[]): string[] => {
-  const labels: string[] = [];
+const collectDynamicFieldKeys = (months: ExtractedMonth[]): string[] => {
+  const keys: string[] = [];
   const seen = new Set<string>();
   for (const month of months) {
     for (const field of (month.fields || [])) {
-      const label = field.label || field.key;
-      if (label && !seen.has(label)) {
-        seen.add(label);
-        labels.push(label);
+      if (field.key && !seen.has(field.key)) {
+        seen.add(field.key);
+        keys.push(field.key);
       }
     }
   }
-  return labels;
+  return keys;
 };
 
-/** Get a dynamic field value from an ExtractedMonth by label */
-const getDynamicFieldValue = (month: ExtractedMonth, label: string): string => {
-  const field = (month.fields || []).find(f => (f.label || f.key) === label);
+/** Get a dynamic field value from an ExtractedMonth by key */
+const getDynamicFieldValue = (month: ExtractedMonth, key: string): string => {
+  const field = (month.fields || []).find(f => f.key === key);
   return field?.value || '';
 };
 
 /**
  * Build tab data from extracted months using event descriptions as column headers.
- * Each row includes header fields (empresa, funcionário, etc.) + event description columns.
+ * Each row includes ALL dynamic fields from fields[] + event description columns.
  */
 export const buildTabsFromMonths = (months: ExtractedMonth[], selectedTabs: TabType[]): Record<string, TabData> => {
   const tabsResult: Record<string, TabData> = {};
   
   if (months.length === 0) return tabsResult;
 
-  // Determine which header fields actually have data
-  const activeHeaderFields = HEADER_FIELDS.filter(field =>
-    months.some(month => getHeaderFieldValue(month, field) !== '')
+  // Collect all dynamic field keys from fields[] (header, footer, bank data, etc.)
+  const allFieldKeys = collectDynamicFieldKeys(months);
+  
+  // Only include fields that have data in at least one month
+  const activeFieldKeys = allFieldKeys.filter(key =>
+    months.some(month => getDynamicFieldValue(month, key) !== '')
   );
 
   // Collect all unique event descriptions across all months
@@ -65,13 +67,13 @@ export const buildTabsFromMonths = (months: ExtractedMonth[], selectedTabs: TabT
     if (activeDescriptions.length === 0) return;
 
     const tabData: TabData = {
-      columns: [...activeHeaderFields, ...activeDescriptions],
+      columns: [...activeFieldKeys, ...activeDescriptions],
       rows: months.map(month => {
         const row: Record<string, string> = {};
 
-        // Add header fields
-        activeHeaderFields.forEach(field => {
-          row[field] = getHeaderFieldValue(month, field);
+        // Add all dynamic fields from fields[]
+        activeFieldKeys.forEach(key => {
+          row[key] = getDynamicFieldValue(month, key);
         });
 
         // Add values for each active description
