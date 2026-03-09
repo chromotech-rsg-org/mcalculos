@@ -125,6 +125,7 @@ const UploadModal: React.FC<UploadModalProps> = ({
           status: 'pending',
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          extractionOptions: { selectedTabs },
         };
 
         await saveDocument(newDoc);
