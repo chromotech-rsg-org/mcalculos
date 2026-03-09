@@ -533,7 +533,6 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
       name: templateName.trim(),
       field_mappings: mappings,
       created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
     };
     await saveTemplate(template);
     getTemplates().then(setTemplates);
