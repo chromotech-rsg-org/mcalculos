@@ -218,6 +218,37 @@ const UploadModal: React.FC<UploadModalProps> = ({
                   </SelectContent>
                 </Select>
               </div>
+              
+              {(payslipPattern === '1a' || payslipPattern === 'auto') && (
+                <div className="space-y-3">
+                  <Label>Abas para extrair</Label>
+                  <div className="space-y-2">
+                    {(['vencimentos', 'descontos', 'quantidade'] as TabType[]).map(tab => (
+                      <div key={tab} className="flex items-center space-x-2">
+                        <Checkbox
+                          id={tab}
+                          checked={selectedTabs.includes(tab)}
+                          onCheckedChange={(checked) => {
+                            if (checked) {
+                              setSelectedTabs(prev => [...prev, tab]);
+                            } else {
+                              setSelectedTabs(prev => prev.filter(t => t !== tab));
+                            }
+                          }}
+                        />
+                        <Label htmlFor={tab} className="text-sm">
+                          {tab === 'vencimentos' && 'Vencimentos'}
+                          {tab === 'descontos' && 'Descontos'}
+                          {tab === 'quantidade' && 'QTDE'}
+                        </Label>
+                      </div>
+                    ))}
+                  </div>
+                  <p className="text-xs text-muted-foreground">
+                    Selecione quais abas serão geradas na visualização dos dados.
+                  </p>
+                </div>
+              )}
             </>
           )}
 

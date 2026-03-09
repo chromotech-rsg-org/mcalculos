@@ -150,6 +150,39 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
 
   useEffect(() => { setCurrentPage(0); }, [search, rowsPerPage]);
 
+  if (hasTabData) {
+    return (
+      <div className="space-y-3">
+        <Tabs value={activeTab} onValueChange={setActiveTab}>
+          <TabsList className="grid w-full grid-cols-3">
+            {availableTabs.includes('vencimentos') && (
+              <TabsTrigger value="vencimentos">Vencimentos</TabsTrigger>
+            )}
+            {availableTabs.includes('descontos') && (
+              <TabsTrigger value="descontos">Descontos</TabsTrigger>
+            )}
+            {availableTabs.includes('quantidade') && (
+              <TabsTrigger value="quantidade">QTDE</TabsTrigger>
+            )}
+          </TabsList>
+
+          {availableTabs.map(tabKey => (
+            <TabsContent key={tabKey} value={tabKey} className="mt-4">
+              <TabDataTable 
+                tabData={data.tabs![tabKey]} 
+                search={search}
+                setSearch={setSearch}
+                rowsPerPage={rowsPerPage}
+                setRowsPerPage={setRowsPerPage}
+              />
+            </TabsContent>
+          ))}
+        </Tabs>
+      </div>
+    );
+  }
+
+  // Legacy view for backwards compatibility
   return (
     <div className="space-y-3">
       {/* Toolbar */}
@@ -221,6 +254,175 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
                 {visibleColumns.map(col => (
                   <TableCell key={col.key} className="text-xs py-2 whitespace-nowrap">
                     {col.getValue(month) || '-'}
+                  </TableCell>
+                ))}
+              </TableRow>
+            )) : (
+              <TableRow>
+                <TableCell colSpan={visibleColumns.length} className="text-center py-8 text-muted-foreground">
+                  Nenhum dado encontrado
+                </TableCell>
+              </TableRow>
+            )}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Pagination */}
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span>
+          {filteredRows.length} registro(s) • Página {currentPage + 1} de {totalPages}
+        </span>
+        <div className="flex items-center gap-1">
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            disabled={currentPage === 0}
+            onClick={() => setCurrentPage(p => p - 1)}
+          >
+            <ChevronLeft className="h-4 w-4" />
+          </Button>
+          <Button
+            variant="outline"
+            size="icon"
+            className="h-8 w-8"
+            disabled={currentPage >= totalPages - 1}
+            onClick={() => setCurrentPage(p => p + 1)}
+          >
+            <ChevronRight className="h-4 w-4" />
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Component for rendering individual tab data
+const TabDataTable: React.FC<{
+  tabData: import('@/types').TabData;
+  search: string;
+  setSearch: (search: string) => void;
+  rowsPerPage: number;
+  setRowsPerPage: (rows: number) => void;
+}> = ({ tabData, search, setSearch, rowsPerPage, setRowsPerPage }) => {
+  const [currentPage, setCurrentPage] = useState(0);
+  const [visibleColumns, setVisibleColumns] = useState<string[]>([]);
+
+  // Initialize visible columns
+  useEffect(() => {
+    if (tabData.columns.length > 0 && visibleColumns.length === 0) {
+      setVisibleColumns(tabData.columns);
+    }
+  }, [tabData.columns, visibleColumns.length]);
+
+  // Filter and paginate data
+  const filteredRows = useMemo(() => {
+    if (!search.trim()) return tabData.rows;
+    const searchLower = search.toLowerCase();
+    return tabData.rows.filter(row =>
+      visibleColumns.some(col => (row[col] || '').toLowerCase().includes(searchLower))
+    );
+  }, [tabData.rows, search, visibleColumns]);
+
+  const totalPages = Math.max(1, Math.ceil(filteredRows.length / rowsPerPage));
+  const pageRows = filteredRows.slice(currentPage * rowsPerPage, (currentPage + 1) * rowsPerPage);
+
+  useEffect(() => { setCurrentPage(0); }, [search, rowsPerPage]);
+
+  const toggleColumn = (col: string) => {
+    setVisibleColumns(prev => 
+      prev.includes(col) 
+        ? prev.filter(c => c !== col)
+        : [...prev, col]
+    );
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Toolbar */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Buscar nos dados..."
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="pl-9 h-9"
+          />
+        </div>
+        <Select value={String(rowsPerPage)} onValueChange={(v) => setRowsPerPage(Number(v))}>
+          <SelectTrigger className="w-[130px] h-9">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {[5, 10, 20, 50, 100].map(n => (
+              <SelectItem key={n} value={String(n)}>{n} linhas</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <Popover>
+          <PopoverTrigger asChild>
+            <Button variant="outline" size="sm" className="h-9">
+              <Settings2 className="h-4 w-4 mr-1" />
+              Colunas
+            </Button>
+          </PopoverTrigger>
+          <PopoverContent className="w-72 p-0" align="end">
+            <div className="p-3 border-b flex items-center justify-between">
+              <span className="text-sm font-medium">Colunas visíveis</span>
+              <div className="flex gap-1">
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-7 text-xs" 
+                  onClick={() => setVisibleColumns(tabData.columns)}
+                >
+                  Todas
+                </Button>
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="h-7 text-xs" 
+                  onClick={() => setVisibleColumns(['Mês'])}
+                >
+                  Nenhuma
+                </Button>
+              </div>
+            </div>
+            <ScrollArea className="h-[300px]">
+              <div className="p-2 space-y-1">
+                {tabData.columns.map(col => (
+                  <label key={col} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer text-sm">
+                    <Checkbox
+                      checked={visibleColumns.includes(col)}
+                      onCheckedChange={() => toggleColumn(col)}
+                    />
+                    {col}
+                  </label>
+                ))}
+              </div>
+            </ScrollArea>
+          </PopoverContent>
+        </Popover>
+      </div>
+
+      {/* Table */}
+      <div className="rounded-lg border overflow-auto max-h-[calc(100vh-400px)]">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              {visibleColumns.map(col => (
+                <TableHead key={col} className="text-xs whitespace-nowrap">{col}</TableHead>
+              ))}
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {pageRows.length > 0 ? pageRows.map((row, idx) => (
+              <TableRow key={idx}>
+                {visibleColumns.map(col => (
+                  <TableCell key={col} className="text-xs py-2 whitespace-nowrap">
+                    {row[col] || '-'}
                   </TableCell>
                 ))}
               </TableRow>
