@@ -126,6 +126,7 @@ export interface Document {
   status: 'pending' | 'extracting' | 'extracted' | 'error';
   created_at: string;
   updated_at: string;
+  extractionOptions?: ExtractionOptions;
 }
 
 export interface AuthState {

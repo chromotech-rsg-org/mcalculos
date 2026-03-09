@@ -8,7 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ExtractedData } from '@/types';
+import { ExtractedData, TabData } from '@/types';
 import { buildTabsFromMonths, getAvailableTabsFromMonths } from '@/lib/build-tabs';
 
 const STORAGE_KEY = 'datatable-visible-columns';
