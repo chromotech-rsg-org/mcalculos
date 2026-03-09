@@ -1,64 +1,27 @@
 import { ExtractedMonth, TabType, TabData } from '@/types';
 
-/** Header fields to include in every tab row */
-const HEADER_FIELDS = [
-  'Mês',
-  'Empresa',
-  'CNPJ',
-  'Funcionário',
-  'CPF',
-  'Cargo',
-  'Departamento',
-  'Filial',
-  'Centro de Custo',
-  'Admissão',
-  'CBO',
-  'PIS',
-  'Identidade',
-  'Salário Base',
-  'Total Vencimentos',
-  'Total Descontos',
-  'Valor Líquido',
-  'Base INSS',
-  'Base FGTS',
-  'FGTS Mês',
-  'Base IRRF',
-  'IRRF',
-  'Banco',
-  'Agência',
-  'Conta Corrente',
-];
-
-/** Get header field value from an ExtractedMonth */
-const getHeaderFieldValue = (month: ExtractedMonth, field: string): string => {
-  switch (field) {
-    case 'Mês': return month.month || month.competencia || '';
-    case 'Empresa': return month.empresa || '';
-    case 'CNPJ': return month.cnpj || '';
-    case 'Funcionário': return month.nomeFuncionario || '';
-    case 'CPF': return month.cpf || '';
-    case 'Cargo': return month.cargo || '';
-    case 'Departamento': return month.departamento || '';
-    case 'Filial': return month.filial || '';
-    case 'Centro de Custo': return month.centroCusto || '';
-    case 'Admissão': return month.dataAdmissao || '';
-    case 'CBO': return month.cbo || '';
-    case 'PIS': return month.pis || '';
-    case 'Identidade': return month.identidade || '';
-    case 'Salário Base': return month.salarioBase || '';
-    case 'Total Vencimentos': return month.totalVencimentos || '';
-    case 'Total Descontos': return month.totalDescontos || '';
-    case 'Valor Líquido': return month.valorLiquido || '';
-    case 'Base INSS': return month.baseInss || '';
-    case 'Base FGTS': return month.baseFgts || '';
-    case 'FGTS Mês': return month.fgtsMes || '';
-    case 'Base IRRF': return month.baseIrrf || '';
-    case 'IRRF': return month.irrf || '';
-    case 'Banco': return month.banco || '';
-    case 'Agência': return month.agencia || '';
-    case 'Conta Corrente': return month.contaCorrente || '';
-    default: return '';
+/**
+ * Collect all unique field labels from months[].fields[], preserving first-appearance order.
+ */
+const collectDynamicFieldLabels = (months: ExtractedMonth[]): string[] => {
+  const labels: string[] = [];
+  const seen = new Set<string>();
+  for (const month of months) {
+    for (const field of (month.fields || [])) {
+      const label = field.label || field.key;
+      if (label && !seen.has(label)) {
+        seen.add(label);
+        labels.push(label);
+      }
+    }
   }
+  return labels;
+};
+
+/** Get a dynamic field value from an ExtractedMonth by label */
+const getDynamicFieldValue = (month: ExtractedMonth, label: string): string => {
+  const field = (month.fields || []).find(f => (f.label || f.key) === label);
+  return field?.value || '';
 };
 
 /**
