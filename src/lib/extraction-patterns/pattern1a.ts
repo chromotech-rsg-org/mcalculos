@@ -1421,8 +1421,25 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
     
     // Strategy 3: Bank name detection
     if (!result.banco) {
-      const bankMatch = text.match(/(Ita[uú]|Bradesco|Santander|Caixa|Banco\s+do\s+Brasil|BB|Sicoob|Sicredi|Nu[Bb]ank|Inter|C6)/i);
-      if (bankMatch) result.banco = bankMatch[1];
+      const bankMatch = text.match(/(Ita[uú]\s*(?:Unibanco)?|Bradesco|Santander|Caixa|Banco\s+do\s+Brasil|BB|Sicoob|Sicredi|Nu[Bb]ank|Inter|C6)/i);
+      if (bankMatch) result.banco = bankMatch[1].trim();
+    }
+    
+    // Strategy 4: "DEPÓSITO EFETUADO NA CONTA CORRENTE: XXXXX" format
+    if (!result.contaCorrente) {
+      const depositoMatch = text.match(/DEP[OÓ]SITO\s+EFETUADO\s+NA\s+CONTA\s+CORRENTE[:\s]*([\d]+)/i);
+      if (depositoMatch) result.contaCorrente = depositoMatch[1].trim();
+    }
+    
+    // Strategy 5: "BANCO: BANCO DO BRASIL" format (full name after label)
+    if (!result.banco) {
+      const bankNameMatch = text.match(/BANCO[:\s]+([A-ZÀ-Ú][A-ZÀ-Ú\s.]+)/i);
+      if (bankNameMatch) {
+        const bankName = bankNameMatch[1].trim();
+        if (bankName.length > 3 && !/^DEPOSIT/i.test(bankName)) {
+          result.banco = bankName;
+        }
+      }
     }
     
     if (result.banco && result.agencia && result.contaCorrente) break;
