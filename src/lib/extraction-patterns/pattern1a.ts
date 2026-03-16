@@ -2078,16 +2078,16 @@ const extractAnnualReport = (pagesItems: TextItem[][]): Pattern1aResult => {
       if (/Base\s+IR\s+PLR/i.test(text)) break;
       if (/Pens[aã]o\s+Alim/i.test(text)) break;
 
-      // Standalone month heading: "5/2022" or "10/2022"
-      const monthHeading = text.match(/^(\d{1,2})\/(\d{4})\s*$/);
+      // Standalone month heading: "5/2022" or "5 / 2022" or "10/2022"
+      const monthHeading = text.match(/^(\d{1,2})\s*\/\s*(\d{4})\s*$/);
       if (monthHeading) {
         currentMonth = `${monthHeading[1].padStart(2, '0')}/${monthHeading[2]}`;
         continue;
       }
 
-      // Extract month prefix from event line: "M/YYYY CODE ..."
+      // Extract month prefix from event line: "M/YYYY CODE ..." or "M / YYYY CODE ..."
       let eventText = text;
-      const monthPrefix = text.match(/^(\d{1,2})\/(\d{4})\s+/);
+      const monthPrefix = text.match(/^(\d{1,2})\s*\/\s*(\d{4})\s+/);
       if (monthPrefix) {
         currentMonth = `${monthPrefix[1].padStart(2, '0')}/${monthPrefix[2]}`;
         eventText = text.substring(monthPrefix[0].length);
