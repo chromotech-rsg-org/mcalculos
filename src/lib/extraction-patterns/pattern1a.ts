@@ -2189,7 +2189,9 @@ const extractAnnualReport = (pagesItems: TextItem[][]): Pattern1aResult => {
         }
 
         if (valor) {
-          rawEvents.push({ month: currentMonth, codigo, descricao, referencia, valor });
+          // Use isDescontoByCode to set tipo for single-occurrence events
+          const tipo = isDescontoByCode(codigo, descricao) ? 'desconto' : 'vencimento';
+          rawEvents.push({ month: currentMonth, codigo, descricao, referencia, valor, tipo });
         }
       }
     }
