@@ -1303,15 +1303,15 @@ const extractFooter = (lines: LayoutLine[]): {
         if (nextVals.length > 0) result.faixaIrrf = nextVals[0].str.trim();
       }
     }
-    if (/Total\s+de\s+Vencimentos/i.test(text) && !result.totalVencimentos) {
-      result.totalVencimentos = getAlignedValue(lines, i, /Total\s+de\s+Vencimentos/i);
+    if (/Total\s+de\s+(Vencimentos|Proventos)/i.test(text) && !result.totalVencimentos) {
+      result.totalVencimentos = getAlignedValue(lines, i, /Total\s+de\s+(Vencimentos|Proventos)/i);
       if (!result.totalVencimentos && i + 1 < lines.length) {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
         if (nextVals.length > 0) result.totalVencimentos = nextVals[0].str.trim();
       }
     }
-    if (/Total\s+de\s+Descontos/i.test(text) && !result.totalDescontos) {
-      result.totalDescontos = getAlignedValue(lines, i, /Total\s+de\s+Descontos/i);
+    if (/Total\s+de\s+Descontos?/i.test(text) && !result.totalDescontos) {
+      result.totalDescontos = getAlignedValue(lines, i, /Total\s+de\s+Descontos?/i);
       if (!result.totalDescontos && i + 1 < lines.length) {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
         if (nextVals.length > 0) result.totalDescontos = nextVals[0].str.trim();
