@@ -1278,7 +1278,7 @@ const extractFooter = (lines: LayoutLine[]): {
         if (nextVals.length > 0) result.fgtsMes = nextVals[0].str.trim();
       }
     }
-    if (/Base\s+(?:Cal\.?\s*|C[aá]lculo?\s*)?IRRF/i.test(text) && !result.baseIrrf) {
+    if (/Base\s+(?:C[aá]l\.?\s*|C[aá]lculo?\s*|para\s+)?IRRF/i.test(text) && !result.baseIrrf) {
       result.baseIrrf = getAlignedValue(lines, i, /Base.*IRRF/i);
       if (!result.baseIrrf) result.baseIrrf = getAlignedValue(lines, i, /^Base/i);
       if (!result.baseIrrf && i + 1 < lines.length) {
