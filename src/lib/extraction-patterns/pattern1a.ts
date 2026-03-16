@@ -1064,7 +1064,7 @@ const extractEvents = (lines: LayoutLine[]): {
       continue;
     }
     
-    // Stop at footer labels
+    // Stop at footer/resume labels
     if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !/Evento|Discrimina|Descri/i.test(text)) break;
     if (/Sal\.\s*Contr/i.test(text)) break;
     if (/SAL[AÁ]RIO\s+CONTR/i.test(text)) break;
@@ -1073,6 +1073,7 @@ const extractEvents = (lines: LayoutLine[]): {
     if (/Local\s+do\s+Pagamento/i.test(text)) break;
     if (/Assinado\s+eletronicamente/i.test(text)) break;
     if (/Fls\.?\s*:/i.test(text)) break;
+    if (/^Resumo$/i.test(text.trim())) break;
     if (/Parab[eé]ns/i.test(text)) continue; // Skip birthday messages inside events
     
     // Try to extract period from "Mês/Ano" column (e.g. "8 / 2020" or "03 / 2019")
