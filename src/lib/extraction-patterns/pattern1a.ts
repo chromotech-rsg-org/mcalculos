@@ -472,7 +472,7 @@ const extractEmployee = (lines: LayoutLine[]): {
     if (!result.nome) {
       // Item-based: find "Nome" label and collect items after it
       for (let j = 0; j < items.length; j++) {
-        if (/^Nome$/i.test(items[j].str.trim())) {
+        if (/^(Nome|Trabalhador)$/i.test(items[j].str.trim())) {
           const parts: string[] = [];
           for (let k = j + 1; k < items.length; k++) {
             const val = items[k].str.trim();
