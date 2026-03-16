@@ -4,7 +4,7 @@
 export const detectPayslipPattern = (text: string): string => {
   // Pattern 1a: Brazilian payslip with table structure (Vencimentos/Descontos)
   // Broadened detection to cover SEMAR, Keypar, and other variations
-  const hasTableStructure = (/Vencimento(?:s)?/i.test(text) || /Proventos/i.test(text)) && /Desconto(?:s)?/i.test(text);
+  const hasTableStructure = (/Vencimento(?:s)?/i.test(text) || /Proventos?/i.test(text)) && /Desconto(?:s)?/i.test(text);
   const hasPayslipIndicators = (
     /Folha\s+(Mensal|Complementar|Pagamento)/i.test(text) ||
     /Sal[aá]rio\s+(Base|Fixo)/i.test(text) ||
