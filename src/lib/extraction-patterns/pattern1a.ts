@@ -1307,11 +1307,16 @@ const extractFooter = (lines: LayoutLine[]): {
         if (nextVals.length > 0) result.totalDescontos = nextVals[0].str.trim();
       }
     }
-    if (/Valor\s+L[ií]quido/i.test(text) && !result.valorLiquido) {
-      result.valorLiquido = getAlignedValue(lines, i, /Valor\s+L[ií]quido/i);
+    if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber|TOTAL\s+L[IÍ]QUIDO)/i.test(text) && !result.valorLiquido) {
+      result.valorLiquido = getAlignedValue(lines, i, /L[ií]quido/i);
       if (!result.valorLiquido && i + 1 < lines.length) {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
         if (nextVals.length > 0) result.valorLiquido = nextVals[0].str.trim();
+      }
+      // Also try standalone number on same line
+      if (!result.valorLiquido) {
+        const m = text.match(/(?:TOTAL\s+)?L[IÍ]QUIDO[:\s]*([\d.,]+)/i);
+        if (m) result.valorLiquido = m[1];
       }
     }
   }
