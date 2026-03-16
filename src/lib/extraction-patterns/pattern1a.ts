@@ -1185,13 +1185,15 @@ const extractFooter = (lines: LayoutLine[]): {
     }
     
     // Second footer row: BASE CÁLC. FGTS, FGTS DO MÊS, BASE CALCULO IRRF, VALOR LÍQUIDO
-    if (/Base\s+C[aá]lc\.?\s*FGTS/i.test(text) || (/FGTS\s+do\s+M[eê]s/i.test(text) && /Base\s+C[aá]lculo?\s*IRRF/i.test(text))) {
+    if (/Base\s+(?:para\s+|C[aá]lc?\.?\s*)?FGTS/i.test(text) || (/FGTS\s+do\s+M[eê]s/i.test(text) && /Base\s+C[aá]l(?:c\.?|culo?)?\s*IRRF/i.test(text))) {
       const labelPositions2: { label: string; x: number }[] = [];
       const footerLabels2 = [
-        { regex: /Base\s+C[aá]lc\.?\s*FGTS/i, name: 'baseFgts' },
+        { regex: /Base\s+(?:para\s+|C[aá]lc?\.?\s*)?FGTS/i, name: 'baseFgts' },
         { regex: /FGTS\s+do\s+M[eê]s/i, name: 'fgtsMes' },
-        { regex: /Base\s+C[aá]lculo?\s*IRRF/i, name: 'baseIrrf' },
-        { regex: /Valor\s+L[ií]quido/i, name: 'valorLiquido' },
+        { regex: /Base\s+C[aá]l(?:c\.?|culo?)?\s*IRRF/i, name: 'baseIrrf' },
+        { regex: /(?:Valor\s+)?L[ií]quido(?:\s+a\s+Receber)?/i, name: 'valorLiquido' },
+        { regex: /Total\s+de\s+(Proventos|Vencimentos)/i, name: 'totalVencimentos' },
+        { regex: /Total\s+de\s+Descontos?/i, name: 'totalDescontos' },
       ];
       
       for (const fl of footerLabels2) {
