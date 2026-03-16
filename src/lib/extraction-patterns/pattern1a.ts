@@ -282,9 +282,9 @@ const extractHeader = (lines: LayoutLine[]): {
         }
       }
       
-      // "01/2024" or "Competência: 01/2024" format (with optional spaces around /)
+      // "01/2024" or "Competência: 01/2024" or "Referência: 08/2023" format
       if (!result.period) {
-        const numCompMatch = text.match(/(?:Compet[eê]ncia|Per[ií]odo)[:\s]*(\d{1,2})\s*\/\s*(\d{4})/i);
+        const numCompMatch = text.match(/(?:Compet[eê]ncia|Per[ií]odo|Refer[eê]ncia)[:\s]*(\d{1,2})\s*\/\s*(\d{4})/i);
         if (numCompMatch) {
           const m = numCompMatch[1].padStart(2, '0');
           result.period = `${m}/${numCompMatch[2]}`;
