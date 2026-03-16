@@ -490,7 +490,7 @@ const extractEmployee = (lines: LayoutLine[]): {
       }
       // Regex fallback
       if (!result.nome) {
-        const nomeMatch = text.match(/(?:Nome|Funcion[aá]rio)[:\s]*([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s.]+?)(?:\s+Matr|\s+CPF|\s+PIS|\s*$)/i);
+        const nomeMatch = text.match(/(?:Nome|Funcion[aá]rio|Trabalhador)[:\s]*([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s.]+?)(?:\s+Matr|\s+CPF|\s+PIS|\s*$)/i);
         if (nomeMatch) result.nome = nomeMatch[1].trim();
       }
     }
