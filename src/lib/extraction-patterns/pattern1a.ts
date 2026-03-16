@@ -906,7 +906,7 @@ const parseEventLineByItems = (
   
   // Classify numeric values by column position
   // When columns are too close (<80px), use code-based heuristic instead of position
-  const columnsClose = Math.abs(vencX - descX) < 80;
+  const columnsClose = Math.abs(vencX - descX) < 40;
   let referencia = '';
   let vencimento = '0';
   let desconto = '0';
