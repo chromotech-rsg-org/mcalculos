@@ -797,9 +797,9 @@ const detectEventHeader = (lines: LayoutLine[]): {
       (hasVerba && hasDescontos);
     
     if (isHeader) {
-      let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Vencimento') || findColumnX(lines[i], 'Proventos');
+      let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Vencimento') || findColumnX(lines[i], 'Proventos') || findColumnX(lines[i], 'Provento');
       let descX = findColumnX(lines[i], 'Descontos') || findColumnX(lines[i], 'Desconto');
-      const refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref');
+      const refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref') || findColumnX(lines[i], 'Qtde');
       
       // If DESCONTOS not on the header line, search nearby lines (±3)
       if (descX === null) {
