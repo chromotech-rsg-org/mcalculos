@@ -187,8 +187,8 @@ const extractHeader = (lines: LayoutLine[]): {
       }
     }
     
-    // If we find "Empresa" label on this line and value on next line
-    if (!result.empresa && /^Empresa$/i.test(text.trim()) && i + 1 < headerEnd) {
+    // If we find "Empresa" or "Razão Social" label on this line and value on next line
+    if (!result.empresa && /^(Empresa|Raz[aã]o\s+Social)$/i.test(text.trim()) && i + 1 < headerEnd) {
       const nextText = lines[i + 1].text.replace(/CNPJ.*$/i, '').trim();
       if (nextText.length > 3) {
         // Check for Keypar "number - name" format on the next line
