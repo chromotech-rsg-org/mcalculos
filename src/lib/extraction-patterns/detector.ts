@@ -16,6 +16,7 @@ export const detectPayslipPattern = (text: string): string => {
     /Compet[eê]ncia/i.test(text) ||
     /Admiss[aã]o/i.test(text) ||
     /Demonstrativo\s+de\s+Pagamento/i.test(text) ||
+    /Recibo\s+de\s+Pagamento/i.test(text) ||
     /Discrimina[cç][aã]o/i.test(text)
   );
   
