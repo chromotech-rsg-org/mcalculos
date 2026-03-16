@@ -1272,7 +1272,7 @@ const extractFooter = (lines: LayoutLine[]): {
         }
       }
     }
-    if (/Base\s+(?:para\s+|C[aá]lc\.?\s*)?FGTS/i.test(text) && !result.baseFgts) {
+    if (/Base\s+(?:para\s+|C[aá]lc?\.?\s*)?FGTS/i.test(text) && !result.baseFgts) {
       result.baseFgts = getAlignedValue(lines, i, /Base/i);
       if (!result.baseFgts && i + 1 < lines.length) {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
