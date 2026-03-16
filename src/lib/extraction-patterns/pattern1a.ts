@@ -260,7 +260,7 @@ const extractHeader = (lines: LayoutLine[]): {
     
     // Competencia (month/year) - multiple formats
     if (!result.competencia) {
-      // "Janeiro de 2024" format
+      // "Janeiro de 2024" or "Janeiro 2024" format
       const compMatch = text.match(/(Janeiro|Fevereiro|Mar[cç]o|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s+(?:de\s+)?(\d{4})/i);
       if (compMatch) {
         const monthKey = compMatch[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -268,6 +268,18 @@ const extractHeader = (lines: LayoutLine[]): {
         const label = MONTH_LABELS[monthKey] || compMatch[1];
         result.competencia = `${label} de ${compMatch[2]}`;
         result.period = `${monthNum}/${compMatch[2]}`;
+      }
+      
+      // "MARÇO/2021" or "Referência: MARÇO/2021" - month name with slash
+      if (!result.period) {
+        const monthSlashMatch = text.match(/(?:Refer[eê]ncia|Compet[eê]ncia)?[:\s]*(Janeiro|Fevereiro|Mar[cç]o|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s*\/\s*(\d{4})/i);
+        if (monthSlashMatch) {
+          const monthKey = monthSlashMatch[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const monthNum = MONTH_NAMES[monthKey] || '??';
+          const label = MONTH_LABELS[monthKey] || monthSlashMatch[1];
+          result.competencia = `${label} de ${monthSlashMatch[2]}`;
+          result.period = `${monthNum}/${monthSlashMatch[2]}`;
+        }
       }
       
       // "01/2024" or "Competência: 01/2024" format (with optional spaces around /)
