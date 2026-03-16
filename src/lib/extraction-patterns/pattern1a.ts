@@ -47,6 +47,13 @@ const isDescontoByCode = (codigo: string, descricao: string): boolean => {
   if (/\bINSS\b/i.test(normalized) && !/\bBase\b/i.test(normalized)) return true;
   if (/\bIRRF\b/i.test(normalized) && !/\bBase\b/i.test(normalized)) return true;
   if (/Contribui[cç][aã]o\s+Assistencial/i.test(normalized)) return true;
+  if (/\bMENSALIDADE\b.*\bSINDICAL\b/i.test(normalized)) return true;
+  if (/\bLIQUIDO\b.*\b(FER|ADICIONAL|13)/i.test(normalized)) return true;
+  if (/\bPENS[AÃ]O\b/i.test(normalized)) return true;
+  if (/\bVALE\s+(TRANSPORTE|REFEI)/i.test(normalized)) return true;
+  if (/\bEMPR[EÉ]STIMO\b/i.test(normalized)) return true;
+  if (/\bADIANTAMENTO\b/i.test(normalized)) return true;
+  if (/\bCONTRIBUI[CÇ][AÃ]O\b/i.test(normalized) && !/\bBase\b/i.test(normalized)) return true;
   return false;
 };
 
