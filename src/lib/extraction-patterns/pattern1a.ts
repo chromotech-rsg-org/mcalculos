@@ -346,6 +346,16 @@ const extractHeader = (lines: LayoutLine[]): {
         }
       }
       
+      // "13° 12-2021" or "13o 12/2021" format (13th salary)
+      if (!result.period) {
+        const trezeMatch = text.match(/13[º°o]\s*(\d{1,2})\s*[-/]\s*(\d{4})/i);
+        if (trezeMatch) {
+          const m = trezeMatch[1].padStart(2, '0');
+          result.period = `13°-${m}/${trezeMatch[2]}`;
+          if (!result.competencia) result.competencia = `13° ${m}/${trezeMatch[2]}`;
+        }
+      }
+      
       // Standalone MM/YYYY in header (with optional spaces: "03 / 2019" or "03/2019")
       // But avoid capturing dates from judicial protocol headers (first line)
       // Also skip dates that look like admission dates (DD/MM/YYYY where DD > 12)
