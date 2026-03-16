@@ -143,7 +143,9 @@ const extractHeader = (lines: LayoutLine[]): {
     
     // CNPJ - multiple formats (including "04.063.469/0002.01" with dot instead of dash)
     if (!result.cnpj) {
-      const cnpjMatch = text.match(/CNPJ[:\s]*([\d./-]+)/i) || text.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}[.-]\d{2})/);
+      // Normalize unicode dashes (en-dash, em-dash) to regular hyphen for matching
+      const normalizedText = text.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+      const cnpjMatch = normalizedText.match(/CNPJ[:\s]*([\d./-]+)/i) || normalizedText.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}[.-]\d{2})/);
       if (cnpjMatch) result.cnpj = cnpjMatch[1].trim();
     }
     
