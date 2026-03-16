@@ -2027,6 +2027,7 @@ interface AnnualRawEvent {
   descricao: string;
   referencia: string;
   valor: string;
+  tipo?: 'vencimento' | 'desconto'; // when positional parser knows the column
 }
 
 /**
@@ -2102,14 +2103,20 @@ const extractAnnualReport = (pagesItems: TextItem[][]): Pattern1aResult => {
         const posEvent = parseEventLineByItems(line, vencX!, descX!, refX);
         if (posEvent) {
           const isVenc = posEvent.vencimento !== '0' && posEvent.vencimento !== '';
-          rawEvents.push({
-            month: currentMonth,
-            codigo: posEvent.codigo,
-            descricao: posEvent.descricao,
-            referencia: posEvent.referencia,
-            valor: isVenc ? posEvent.vencimento : posEvent.desconto,
-          });
-          continue;
+          const isDesc = posEvent.desconto !== '0' && posEvent.desconto !== '';
+          if (isVenc) {
+            rawEvents.push({
+              month: currentMonth, codigo: posEvent.codigo, descricao: posEvent.descricao,
+              referencia: posEvent.referencia, valor: posEvent.vencimento, tipo: 'vencimento',
+            });
+          }
+          if (isDesc) {
+            rawEvents.push({
+              month: currentMonth, codigo: posEvent.codigo, descricao: posEvent.descricao,
+              referencia: posEvent.referencia, valor: posEvent.desconto, tipo: 'desconto',
+            });
+          }
+          if (isVenc || isDesc) continue;
         }
       }
 
@@ -2209,33 +2216,50 @@ const extractAnnualReport = (pagesItems: TextItem[][]): Pattern1aResult => {
   for (const monthKey of sortedMonthKeys) {
     const events = monthMap.get(monthKey)!;
 
-    // Dedup: for each código+descrição, first occurrence = vencimento, second = desconto
+    // Dedup: if tipo is known (positional), use it directly.
+    // Otherwise (text-based), first occurrence = vencimento, second = desconto.
     const deduped: PayslipEvent[] = [];
     const seen = new Map<string, number>(); // key -> index in deduped
 
     for (const ev of events) {
       const key = `${ev.codigo}|${ev.descricao}`;
 
-      if (!seen.has(key)) {
-        // First occurrence = vencimento
-        seen.set(key, deduped.length);
-        deduped.push({
-          codigo: ev.codigo,
-          descricao: ev.descricao,
-          referencia: ev.referencia,
-          vencimento: ev.valor,
-          desconto: '0',
-        });
-      } else {
-        // Second occurrence = desconto
-        const idx = seen.get(key)!;
-        deduped[idx].desconto = ev.valor;
-        if (ev.referencia && !deduped[idx].referencia) {
-          deduped[idx].referencia = ev.referencia;
+      if (ev.tipo) {
+        // Positional parser already knows the column
+        if (!seen.has(key)) {
+          seen.set(key, deduped.length);
+          deduped.push({
+            codigo: ev.codigo,
+            descricao: ev.descricao,
+            referencia: ev.referencia,
+            vencimento: ev.tipo === 'vencimento' ? ev.valor : '0',
+            desconto: ev.tipo === 'desconto' ? ev.valor : '0',
+          });
+        } else {
+          const idx = seen.get(key)!;
+          if (ev.tipo === 'vencimento') deduped[idx].vencimento = ev.valor;
+          else deduped[idx].desconto = ev.valor;
+          if (ev.referencia && !deduped[idx].referencia) deduped[idx].referencia = ev.referencia;
         }
-        // Clear so a third occurrence starts fresh
-        seen.delete(key);
+      } else {
+        // Text-based: first = vencimento, second = desconto
+        if (!seen.has(key)) {
+          seen.set(key, deduped.length);
+          deduped.push({
+            codigo: ev.codigo,
+            descricao: ev.descricao,
+            referencia: ev.referencia,
+            vencimento: ev.valor,
+            desconto: '0',
+          });
+        } else {
+          const idx = seen.get(key)!;
+          deduped[idx].desconto = ev.valor;
+          if (ev.referencia && !deduped[idx].referencia) deduped[idx].referencia = ev.referencia;
+          seen.delete(key);
+        }
       }
+
     }
 
     months.push({
