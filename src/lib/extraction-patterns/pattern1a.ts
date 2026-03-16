@@ -1260,9 +1260,14 @@ const extractFooter = (lines: LayoutLine[]): {
       }
     }
     if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text) && !result.salarioBase) {
-      for (let k = i + 1; k < Math.min(i + 3, lines.length); k++) {
+      for (let k = i + 1; k < Math.min(i + 4, lines.length); k++) {
         if (/Sal[aá]rio\s+Fixo/i.test(lines[k].text)) {
           result.salarioBase = getAlignedValue(lines, k, /Sal[aá]rio/i);
+          // Also try: "Salário Fixo" label with numeric value on same line
+          if (!result.salarioBase) {
+            const fixoVals = lines[k].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+            if (fixoVals.length > 0) result.salarioBase = fixoVals[0].str.trim();
+          }
           break;
         }
       }
