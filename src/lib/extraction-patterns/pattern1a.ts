@@ -1146,8 +1146,8 @@ const extractFooter = (lines: LayoutLine[]): {
         { regex: /Sal[aá]rio\s+Base/i, name: 'salarioBase' },
         { regex: /Sal[aá]rio\s+Contr\.?\s*INSS|Sal\.\s*Contr\.?\s*INSS/i, name: 'salarioContrInss' },
         { regex: /Faixa\s+IRRF/i, name: 'faixaIrrf' },
-        { regex: /Total\s+de\s+Vencimentos/i, name: 'totalVencimentos' },
-        { regex: /Total\s+de\s+Descontos/i, name: 'totalDescontos' },
+        { regex: /Total\s+de\s+(Vencimentos|Proventos)/i, name: 'totalVencimentos' },
+        { regex: /Total\s+de\s+Descontos?/i, name: 'totalDescontos' },
       ];
       
       for (const fl of footerLabels) {
