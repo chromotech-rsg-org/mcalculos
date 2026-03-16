@@ -143,15 +143,17 @@ const extractHeader = (lines: LayoutLine[]): {
     
     // CNPJ - multiple formats (including "04.063.469/0002.01" with dot instead of dash)
     if (!result.cnpj) {
-      const cnpjMatch = text.match(/CNPJ[:\s]*([\d./-]+)/i) || text.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}[.-]\d{2})/);
+      // Normalize unicode dashes (en-dash, em-dash) to regular hyphen for matching
+      const normalizedText = text.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+      const cnpjMatch = normalizedText.match(/CNPJ[:\s]*([\d./-]+)/i) || normalizedText.match(/(\d{2}\.\d{3}\.\d{3}\/\d{4}[.-]\d{2})/);
       if (cnpjMatch) result.cnpj = cnpjMatch[1].trim();
     }
     
-    // Empresa - look for labeled "Empresa" field
+    // Empresa - look for labeled "Empresa" or "Razão Social" field
     if (!result.empresa) {
-      // "Empresa" label followed by value on same line (item-based)
+      // "Empresa" or "Razão Social" label followed by value on same line (item-based)
       for (let j = 0; j < items.length; j++) {
-        if (/^Empresa$/i.test(items[j].str.trim())) {
+        if (/^(Empresa|Raz[aã]o\s+Social)$/i.test(items[j].str.trim())) {
           // Collect next items until we hit another label or CNPJ
           const parts: string[] = [];
           for (let k = j + 1; k < items.length; k++) {
@@ -176,17 +178,25 @@ const extractHeader = (lines: LayoutLine[]): {
       
       // Fallback: line after "Empresa" label or company name indicators
       if (!result.empresa) {
-        const cleaned = text.replace(/[\d./-]+/g, '').replace(/CNPJ|Codigo|Folha|Mensalista|C[oó]digo|Descri[cç]|Evento|Discrimina|Demonstrativo|Pagamento|Mensal/gi, '').trim();
+        // Try collapsing spaced-out company names first: "C O V A B R A  S U P E R ..." → "COVABRA SUPER..."
+        let cleaned = text;
+        // Detect spaced-out text: single letters separated by spaces (at least 4 in a row)
+        const spacedMatch = cleaned.match(/(?:[A-ZÀ-Ú]\s){4,}[A-ZÀ-Ú]/);
+        if (spacedMatch) {
+          // Collapse: remove spaces between single letters
+          cleaned = cleaned.replace(/\b([A-ZÀ-Ú])\s+(?=[A-ZÀ-Ú]\b)/g, '$1');
+        }
+        cleaned = cleaned.replace(/[\d./-]+/g, '').replace(/CNPJ|Codigo|Folha|Mensalista|C[oó]digo|Descri[cç]|Evento|Discrimina|Demonstrativo|Pagamento|Mensal/gi, '').trim();
         if (cleaned.length > 5 && /[A-ZÀ-Ú]{2,}/.test(cleaned)) {
-          if (/LTDA|S\.?A\.?|EIRELI|ME\b|EPP|COMERCIAL|IND|COM\b|CENTRO|UNIFICADO|FEDERAL|SERVICO|GRUPO/i.test(cleaned)) {
+          if (/LTDA|S\.?A\.?|EIRELI|ME\b|EPP|COMERCIAL|IND|COM\b|CENTRO|UNIFICADO|FEDERAL|SERVICO|GRUPO|SUPERMERCADO/i.test(cleaned)) {
             result.empresa = cleaned;
           }
         }
       }
     }
     
-    // If we find "Empresa" label on this line and value on next line
-    if (!result.empresa && /^Empresa$/i.test(text.trim()) && i + 1 < headerEnd) {
+    // If we find "Empresa" or "Razão Social" label on this line and value on next line
+    if (!result.empresa && /^(Empresa|Raz[aã]o\s+Social)$/i.test(text.trim()) && i + 1 < headerEnd) {
       const nextText = lines[i + 1].text.replace(/CNPJ.*$/i, '').trim();
       if (nextText.length > 3) {
         // Check for Keypar "number - name" format on the next line
@@ -195,8 +205,8 @@ const extractHeader = (lines: LayoutLine[]): {
       }
     }
     
-    // EMPRESA label on a separate line with value on a different nearby line
-    if (!result.empresa && /^EMPRESA$/i.test(text.trim())) {
+    // EMPRESA / RAZÃO SOCIAL label on a separate line with value on a different nearby line
+    if (!result.empresa && /^(EMPRESA|RAZ[AÃ]O\s+SOCIAL)$/i.test(text.trim())) {
       // Scan next few lines for a company-like name
       for (let k = i + 1; k < Math.min(i + 4, headerEnd); k++) {
         const nearText = lines[k].text.trim();
@@ -250,7 +260,7 @@ const extractHeader = (lines: LayoutLine[]): {
     
     // Competencia (month/year) - multiple formats
     if (!result.competencia) {
-      // "Janeiro de 2024" format
+      // "Janeiro de 2024" or "Janeiro 2024" format
       const compMatch = text.match(/(Janeiro|Fevereiro|Mar[cç]o|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s+(?:de\s+)?(\d{4})/i);
       if (compMatch) {
         const monthKey = compMatch[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
@@ -258,6 +268,18 @@ const extractHeader = (lines: LayoutLine[]): {
         const label = MONTH_LABELS[monthKey] || compMatch[1];
         result.competencia = `${label} de ${compMatch[2]}`;
         result.period = `${monthNum}/${compMatch[2]}`;
+      }
+      
+      // "MARÇO/2021" or "Referência: MARÇO/2021" - month name with slash
+      if (!result.period) {
+        const monthSlashMatch = text.match(/(?:Refer[eê]ncia|Compet[eê]ncia)?[:\s]*(Janeiro|Fevereiro|Mar[cç]o|Abril|Maio|Junho|Julho|Agosto|Setembro|Outubro|Novembro|Dezembro)\s*\/\s*(\d{4})/i);
+        if (monthSlashMatch) {
+          const monthKey = monthSlashMatch[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const monthNum = MONTH_NAMES[monthKey] || '??';
+          const label = MONTH_LABELS[monthKey] || monthSlashMatch[1];
+          result.competencia = `${label} de ${monthSlashMatch[2]}`;
+          result.period = `${monthNum}/${monthSlashMatch[2]}`;
+        }
       }
       
       // "01/2024" or "Competência: 01/2024" format (with optional spaces around /)
@@ -321,6 +343,16 @@ const extractHeader = (lines: LayoutLine[]): {
           const m = foundMonth.padStart(2, '0');
           result.period = `${m}/${foundYear}`;
           if (!result.competencia) result.competencia = `${m}/${foundYear}`;
+        }
+      }
+      
+      // "13° 12-2021" or "13o 12/2021" format (13th salary)
+      if (!result.period) {
+        const trezeMatch = text.match(/13[º°o]\s*(\d{1,2})\s*[-/]\s*(\d{4})/i);
+        if (trezeMatch) {
+          const m = trezeMatch[1].padStart(2, '0');
+          result.period = `13°-${m}/${trezeMatch[2]}`;
+          if (!result.competencia) result.competencia = `13° ${m}/${trezeMatch[2]}`;
         }
       }
       
@@ -440,7 +472,7 @@ const extractEmployee = (lines: LayoutLine[]): {
     if (!result.nome) {
       // Item-based: find "Nome" label and collect items after it
       for (let j = 0; j < items.length; j++) {
-        if (/^Nome$/i.test(items[j].str.trim())) {
+        if (/^(Nome|Trabalhador)$/i.test(items[j].str.trim())) {
           const parts: string[] = [];
           for (let k = j + 1; k < items.length; k++) {
             const val = items[k].str.trim();
@@ -458,7 +490,7 @@ const extractEmployee = (lines: LayoutLine[]): {
       }
       // Regex fallback
       if (!result.nome) {
-        const nomeMatch = text.match(/(?:Nome|Funcion[aá]rio)[:\s]*([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s.]+?)(?:\s+Matr|\s+CPF|\s+PIS|\s*$)/i);
+        const nomeMatch = text.match(/(?:Nome|Funcion[aá]rio|Trabalhador)[:\s]*([A-ZÀ-Ú][A-ZÀ-Úa-zà-ú\s.]+?)(?:\s+Matr|\s+CPF|\s+PIS|\s*$)/i);
         if (nomeMatch) result.nome = nomeMatch[1].trim();
       }
     }
@@ -467,7 +499,7 @@ const extractEmployee = (lines: LayoutLine[]): {
     if (!result.cargo) {
       // Item-based: "Função" or "Cargo" label
       for (let j = 0; j < items.length; j++) {
-        if (/^(Fun[cç][aã]o|Cargo)$/i.test(items[j].str.trim())) {
+        if (/^(Fun[cç][aã]o|Cargo|Cargo\s*\/\s*N[ií]vel)$/i.test(items[j].str.trim())) {
           const parts: string[] = [];
           for (let k = j + 1; k < items.length; k++) {
             const val = items[k].str.trim();
@@ -748,7 +780,7 @@ const detectEventHeader = (lines: LayoutLine[]): {
     // Layout A: "Código" / "Cód." + "Descrição" + "Vencimentos/Proventos"
     const hasCodigo = /C[oó]d(?:igo)?\.?/i.test(text);
     const hasDescricao = /Descri[cç][aã]o/i.test(text);
-    const hasVenc = /Vencimento(?:s)?|Proventos/i.test(text);
+    const hasVenc = /Vencimento(?:s)?|Proventos?/i.test(text);
     
     // Layout B: "Evento" + "Discriminação" + "Proventos"
     const hasEvento = /\bEvento\b/i.test(text);
@@ -775,9 +807,9 @@ const detectEventHeader = (lines: LayoutLine[]): {
       (hasVerba && hasDescontos);
     
     if (isHeader) {
-      let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Vencimento') || findColumnX(lines[i], 'Proventos');
+      let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Vencimento') || findColumnX(lines[i], 'Proventos') || findColumnX(lines[i], 'Provento');
       let descX = findColumnX(lines[i], 'Descontos') || findColumnX(lines[i], 'Desconto');
-      const refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref');
+      const refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref') || findColumnX(lines[i], 'Qtde');
       
       // If DESCONTOS not on the header line, search nearby lines (±3)
       if (descX === null) {
@@ -795,7 +827,7 @@ const detectEventHeader = (lines: LayoutLine[]): {
       if (vencX === null) {
         for (let k = Math.max(0, i - 3); k <= Math.min(lines.length - 1, i + 3); k++) {
           if (k === i) continue;
-          const nearbyVencX = findColumnX(lines[k], 'Vencimentos') || findColumnX(lines[k], 'Vencimento') || findColumnX(lines[k], 'Proventos');
+          const nearbyVencX = findColumnX(lines[k], 'Vencimentos') || findColumnX(lines[k], 'Vencimento') || findColumnX(lines[k], 'Proventos') || findColumnX(lines[k], 'Provento');
           if (nearbyVencX !== null) {
             vencX = nearbyVencX;
             break;
@@ -1017,12 +1049,17 @@ const extractEvents = (lines: LayoutLine[]): {
       continue;
     }
     
-    if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber)/i.test(text) && !valorLiquido) {
+    if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber|TOTAL\s+L[IÍ]QUIDO)/i.test(text) && !valorLiquido) {
       const v = getAlignedValue(lines, i, /L[ií]quido/i);
       if (v) valorLiquido = v;
       if (!valorLiquido) {
-        const m = text.match(/(?:Valor\s+)?L[ií]quido(?:\s+a\s+Receber)?\s+([\d.,]+)/i);
+        const m = text.match(/(?:Valor\s+|TOTAL\s+)?L[ií]quido(?:\s+a\s+Receber)?\s+([\d.,]+)/i);
         if (m) valorLiquido = m[1];
+      }
+      // "TOTAL LIQUIDO" on this line, value on next line
+      if (!valorLiquido && i + 1 < lines.length) {
+        const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nextVals.length > 0) valorLiquido = nextVals[0].str.trim();
       }
       continue;
     }
@@ -1280,11 +1317,16 @@ const extractFooter = (lines: LayoutLine[]): {
         if (nextVals.length > 0) result.totalDescontos = nextVals[0].str.trim();
       }
     }
-    if (/Valor\s+L[ií]quido/i.test(text) && !result.valorLiquido) {
-      result.valorLiquido = getAlignedValue(lines, i, /Valor\s+L[ií]quido/i);
+    if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber|TOTAL\s+L[IÍ]QUIDO)/i.test(text) && !result.valorLiquido) {
+      result.valorLiquido = getAlignedValue(lines, i, /L[ií]quido/i);
       if (!result.valorLiquido && i + 1 < lines.length) {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
         if (nextVals.length > 0) result.valorLiquido = nextVals[0].str.trim();
+      }
+      // Also try standalone number on same line
+      if (!result.valorLiquido) {
+        const m = text.match(/(?:TOTAL\s+)?L[IÍ]QUIDO[:\s]*([\d.,]+)/i);
+        if (m) result.valorLiquido = m[1];
       }
     }
   }
@@ -1389,8 +1431,25 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
     
     // Strategy 3: Bank name detection
     if (!result.banco) {
-      const bankMatch = text.match(/(Ita[uú]|Bradesco|Santander|Caixa|Banco\s+do\s+Brasil|BB|Sicoob|Sicredi|Nu[Bb]ank|Inter|C6)/i);
-      if (bankMatch) result.banco = bankMatch[1];
+      const bankMatch = text.match(/(Ita[uú]\s*(?:Unibanco)?|Bradesco|Santander|Caixa|Banco\s+do\s+Brasil|BB|Sicoob|Sicredi|Nu[Bb]ank|Inter|C6)/i);
+      if (bankMatch) result.banco = bankMatch[1].trim();
+    }
+    
+    // Strategy 4: "DEPÓSITO EFETUADO NA CONTA CORRENTE: XXXXX" format
+    if (!result.contaCorrente) {
+      const depositoMatch = text.match(/DEP[OÓ]SITO\s+EFETUADO\s+NA\s+CONTA\s+CORRENTE[:\s]*([\d]+)/i);
+      if (depositoMatch) result.contaCorrente = depositoMatch[1].trim();
+    }
+    
+    // Strategy 5: "BANCO: BANCO DO BRASIL" format (full name after label)
+    if (!result.banco) {
+      const bankNameMatch = text.match(/BANCO[:\s]+([A-ZÀ-Ú][A-ZÀ-Ú\s.]+)/i);
+      if (bankNameMatch) {
+        const bankName = bankNameMatch[1].trim();
+        if (bankName.length > 3 && !/^DEPOSIT/i.test(bankName)) {
+          result.banco = bankName;
+        }
+      }
     }
     
     if (result.banco && result.agencia && result.contaCorrente) break;
@@ -1498,13 +1557,15 @@ const extractAllFields = (
 
   /** Known labels that can have TEXT values (not just numbers) */
   const TEXT_VALUE_LABELS = [
-    /^Empresa$/i, /^Nome$/i, /^Nome\s+do\s+Funcion[aá]rio$/i,
+    /^Empresa$/i, /^Raz[aã]o\s+Social$/i, /^Nome$/i, /^Nome\s+do\s+Funcion[aá]rio$/i,
     /^Matr[ií]cula$/i, /^Mat\.?$/i, /^Registro$/i, /^Cadastro$/i,
-    /^Fun[cç][aã]o$/i, /^Cargo$/i, /^Bairro$/i, /^Cidade$/i, /^UF$/i,
-    /^Endere[cç]o$/i, /^Departamento$/i, /^Se[cç][aã]o$/i,
-    /^Local\s+do\s+Pagamento$/i, /^Folha$/i, /^Tipo\s+Folha$/i, /^Filial$/i,
-    /^Banco$/i, /^CC$/i, /^Centro\s+(?:de\s+)?Custo$/i,
-    /^Dep\.?\s*IR$/i, /^Dep\.?\s*SF$/i,
+    /^Fun[cç][aã]o$/i, /^Cargo$/i, /^Cargo\s*\/\s*N[ií]vel$/i, /^N[ií]vel$/i, /^Bairro$/i, /^Cidade$/i, /^UF$/i,
+    /^Endere[cç]o$/i, /^Departamento$/i, /^Se[cç][aã]o$/i, /^Lota[cç][aã]o$/i,
+    /^Local\s+do\s+Pagamento$/i, /^Local$/i, /^Folha$/i, /^Tipo\s+Folha$/i, /^Filial$/i,
+    /^Banco$/i, /^Banco\s+Deposit[aá]rio$/i, /^CC$/i, /^Centro\s+(?:de\s+)?Custo$/i,
+    /^Dep\.?\s*IR$/i, /^Dep\.?\s*SF$/i, /^Dep\.?\s*IRRF$/i, /^Dep\.?\s*Sal\.?\s*Fam[ií]lia$/i,
+    /^CTPS$/i, /^Hor[aá]rio$/i, /^Sequ[eê]ncia$/i, /^Refer[eê]ncia$/i,
+    /^Trabalhador$/i, /^Mensagem$/i, /^Conta$/i, /^D[ií]gito$/i,
   ];
 
   const isTextValueLabel = (s: string): boolean => {
