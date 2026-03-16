@@ -1039,12 +1039,17 @@ const extractEvents = (lines: LayoutLine[]): {
       continue;
     }
     
-    if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber)/i.test(text) && !valorLiquido) {
+    if (/(?:Valor\s+L[ií]quido|L[ií]quido\s+a\s+Receber|TOTAL\s+L[IÍ]QUIDO)/i.test(text) && !valorLiquido) {
       const v = getAlignedValue(lines, i, /L[ií]quido/i);
       if (v) valorLiquido = v;
       if (!valorLiquido) {
-        const m = text.match(/(?:Valor\s+)?L[ií]quido(?:\s+a\s+Receber)?\s+([\d.,]+)/i);
+        const m = text.match(/(?:Valor\s+|TOTAL\s+)?L[ií]quido(?:\s+a\s+Receber)?\s+([\d.,]+)/i);
         if (m) valorLiquido = m[1];
+      }
+      // "TOTAL LIQUIDO" on this line, value on next line
+      if (!valorLiquido && i + 1 < lines.length) {
+        const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+        if (nextVals.length > 0) valorLiquido = nextVals[0].str.trim();
       }
       continue;
     }
