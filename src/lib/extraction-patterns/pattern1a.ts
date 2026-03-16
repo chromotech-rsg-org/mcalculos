@@ -1547,13 +1547,15 @@ const extractAllFields = (
 
   /** Known labels that can have TEXT values (not just numbers) */
   const TEXT_VALUE_LABELS = [
-    /^Empresa$/i, /^Nome$/i, /^Nome\s+do\s+Funcion[aá]rio$/i,
+    /^Empresa$/i, /^Raz[aã]o\s+Social$/i, /^Nome$/i, /^Nome\s+do\s+Funcion[aá]rio$/i,
     /^Matr[ií]cula$/i, /^Mat\.?$/i, /^Registro$/i, /^Cadastro$/i,
-    /^Fun[cç][aã]o$/i, /^Cargo$/i, /^Bairro$/i, /^Cidade$/i, /^UF$/i,
-    /^Endere[cç]o$/i, /^Departamento$/i, /^Se[cç][aã]o$/i,
-    /^Local\s+do\s+Pagamento$/i, /^Folha$/i, /^Tipo\s+Folha$/i, /^Filial$/i,
-    /^Banco$/i, /^CC$/i, /^Centro\s+(?:de\s+)?Custo$/i,
-    /^Dep\.?\s*IR$/i, /^Dep\.?\s*SF$/i,
+    /^Fun[cç][aã]o$/i, /^Cargo$/i, /^Cargo\s*\/\s*N[ií]vel$/i, /^N[ií]vel$/i, /^Bairro$/i, /^Cidade$/i, /^UF$/i,
+    /^Endere[cç]o$/i, /^Departamento$/i, /^Se[cç][aã]o$/i, /^Lota[cç][aã]o$/i,
+    /^Local\s+do\s+Pagamento$/i, /^Local$/i, /^Folha$/i, /^Tipo\s+Folha$/i, /^Filial$/i,
+    /^Banco$/i, /^Banco\s+Deposit[aá]rio$/i, /^CC$/i, /^Centro\s+(?:de\s+)?Custo$/i,
+    /^Dep\.?\s*IR$/i, /^Dep\.?\s*SF$/i, /^Dep\.?\s*IRRF$/i, /^Dep\.?\s*Sal\.?\s*Fam[ií]lia$/i,
+    /^CTPS$/i, /^Hor[aá]rio$/i, /^Sequ[eê]ncia$/i, /^Refer[eê]ncia$/i,
+    /^Trabalhador$/i, /^Mensagem$/i, /^Conta$/i, /^D[ií]gito$/i,
   ];
 
   const isTextValueLabel = (s: string): boolean => {
