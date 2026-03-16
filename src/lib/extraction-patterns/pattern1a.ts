@@ -149,11 +149,11 @@ const extractHeader = (lines: LayoutLine[]): {
       if (cnpjMatch) result.cnpj = cnpjMatch[1].trim();
     }
     
-    // Empresa - look for labeled "Empresa" field
+    // Empresa - look for labeled "Empresa" or "Razão Social" field
     if (!result.empresa) {
-      // "Empresa" label followed by value on same line (item-based)
+      // "Empresa" or "Razão Social" label followed by value on same line (item-based)
       for (let j = 0; j < items.length; j++) {
-        if (/^Empresa$/i.test(items[j].str.trim())) {
+        if (/^(Empresa|Raz[aã]o\s+Social)$/i.test(items[j].str.trim())) {
           // Collect next items until we hit another label or CNPJ
           const parts: string[] = [];
           for (let k = j + 1; k < items.length; k++) {
