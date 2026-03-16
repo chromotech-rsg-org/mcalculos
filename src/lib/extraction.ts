@@ -188,28 +188,98 @@ export const extractDataFromPDF = async (base64Data: string, forcedPattern?: str
 // Image OCR Extraction
 // ============================================================
 
+/**
+ * Render a PDF page to a canvas and return a base64 PNG data URL.
+ */
+const renderPdfPageToImage = async (base64Data: string, pageNum: number, scale = 2): Promise<string> => {
+  const pdfData = base64Data.split(',')[1] || base64Data;
+  const binaryString = atob(pdfData);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+
+  const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+  const page = await pdf.getPage(pageNum);
+  const viewport = page.getViewport({ scale });
+
+  const canvas = document.createElement('canvas');
+  canvas.width = viewport.width;
+  canvas.height = viewport.height;
+  const ctx = canvas.getContext('2d')!;
+
+  await page.render({ canvasContext: ctx, viewport }).promise;
+  const dataUrl = canvas.toDataURL('image/png');
+  canvas.remove();
+  return dataUrl;
+};
+
+/**
+ * Check if a base64 string represents a PDF file.
+ */
+const isPdfBase64 = (base64Data: string): boolean => {
+  return base64Data.startsWith('data:application/pdf') || 
+    (base64Data.includes('JVBERi') || base64Data.startsWith('JVBER')); // %PDF magic bytes in base64
+};
+
 export const extractDataFromImage = async (base64Data: string): Promise<ExtractedData> => {
   const months: ExtractedMonth[] = [];
   let employeeName = '';
   let cnpj = '';
   
   try {
-    const result = await Tesseract.recognize(base64Data, 'por', {
-      logger: (m) => console.log('OCR:', m.status, m.progress),
-    });
-    
-    const text = result.data.text;
-    
-    employeeName = extractEmployeeName(text);
-    cnpj = extractCNPJ(text);
-    
-    const fields = extractFieldsFromText(text);
-    const month = extractMonth(text);
-    
-    if (fields.length > 0) {
-      months.push({ month, fields });
+    // If input is a PDF, render pages to images first
+    if (isPdfBase64(base64Data)) {
+      console.log('Input is PDF - rendering pages to images for OCR...');
+      const pdfData = base64Data.split(',')[1] || base64Data;
+      const binaryString = atob(pdfData);
+      const bytes = new Uint8Array(binaryString.length);
+      for (let i = 0; i < binaryString.length; i++) {
+        bytes[i] = binaryString.charCodeAt(i);
+      }
+      const pdf = await pdfjsLib.getDocument({ data: bytes }).promise;
+      const numPages = pdf.numPages;
+
+      for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+        console.log(`OCR: rendering page ${pageNum}/${numPages}`);
+        const pageImage = await renderPdfPageToImage(base64Data, pageNum);
+        
+        const result = await Tesseract.recognize(pageImage, 'por', {
+          logger: (m) => console.log(`OCR page ${pageNum}:`, m.status, m.progress),
+        });
+        
+        const text = result.data.text;
+        
+        if (pageNum === 1) {
+          employeeName = extractEmployeeName(text);
+          cnpj = extractCNPJ(text);
+        }
+        
+        const fields = extractFieldsFromText(text);
+        const month = extractMonth(text);
+        
+        if (fields.length > 0) {
+          months.push({ month, fields });
+        }
+      }
+    } else {
+      // Regular image
+      const result = await Tesseract.recognize(base64Data, 'por', {
+        logger: (m) => console.log('OCR:', m.status, m.progress),
+      });
+      
+      const text = result.data.text;
+      
+      employeeName = extractEmployeeName(text);
+      cnpj = extractCNPJ(text);
+      
+      const fields = extractFieldsFromText(text);
+      const month = extractMonth(text);
+      
+      if (fields.length > 0) {
+        months.push({ month, fields });
+      }
     }
-    
   } catch (error) {
     console.error('OCR extraction error:', error);
     throw error;
