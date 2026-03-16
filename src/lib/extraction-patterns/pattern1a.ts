@@ -770,7 +770,7 @@ const detectEventHeader = (lines: LayoutLine[]): {
     // Layout A: "Código" / "Cód." + "Descrição" + "Vencimentos/Proventos"
     const hasCodigo = /C[oó]d(?:igo)?\.?/i.test(text);
     const hasDescricao = /Descri[cç][aã]o/i.test(text);
-    const hasVenc = /Vencimento(?:s)?|Proventos/i.test(text);
+    const hasVenc = /Vencimento(?:s)?|Proventos?/i.test(text);
     
     // Layout B: "Evento" + "Discriminação" + "Proventos"
     const hasEvento = /\bEvento\b/i.test(text);
