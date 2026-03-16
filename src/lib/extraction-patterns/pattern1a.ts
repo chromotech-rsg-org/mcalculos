@@ -178,9 +178,17 @@ const extractHeader = (lines: LayoutLine[]): {
       
       // Fallback: line after "Empresa" label or company name indicators
       if (!result.empresa) {
-        const cleaned = text.replace(/[\d./-]+/g, '').replace(/CNPJ|Codigo|Folha|Mensalista|C[oó]digo|Descri[cç]|Evento|Discrimina|Demonstrativo|Pagamento|Mensal/gi, '').trim();
+        // Try collapsing spaced-out company names first: "C O V A B R A  S U P E R ..." → "COVABRA SUPER..."
+        let cleaned = text;
+        // Detect spaced-out text: single letters separated by spaces (at least 4 in a row)
+        const spacedMatch = cleaned.match(/(?:[A-ZÀ-Ú]\s){4,}[A-ZÀ-Ú]/);
+        if (spacedMatch) {
+          // Collapse: remove spaces between single letters
+          cleaned = cleaned.replace(/\b([A-ZÀ-Ú])\s+(?=[A-ZÀ-Ú]\b)/g, '$1');
+        }
+        cleaned = cleaned.replace(/[\d./-]+/g, '').replace(/CNPJ|Codigo|Folha|Mensalista|C[oó]digo|Descri[cç]|Evento|Discrimina|Demonstrativo|Pagamento|Mensal/gi, '').trim();
         if (cleaned.length > 5 && /[A-ZÀ-Ú]{2,}/.test(cleaned)) {
-          if (/LTDA|S\.?A\.?|EIRELI|ME\b|EPP|COMERCIAL|IND|COM\b|CENTRO|UNIFICADO|FEDERAL|SERVICO|GRUPO/i.test(cleaned)) {
+          if (/LTDA|S\.?A\.?|EIRELI|ME\b|EPP|COMERCIAL|IND|COM\b|CENTRO|UNIFICADO|FEDERAL|SERVICO|GRUPO|SUPERMERCADO/i.test(cleaned)) {
             result.empresa = cleaned;
           }
         }
