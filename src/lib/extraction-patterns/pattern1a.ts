@@ -197,8 +197,8 @@ const extractHeader = (lines: LayoutLine[]): {
       }
     }
     
-    // EMPRESA label on a separate line with value on a different nearby line
-    if (!result.empresa && /^EMPRESA$/i.test(text.trim())) {
+    // EMPRESA / RAZÃO SOCIAL label on a separate line with value on a different nearby line
+    if (!result.empresa && /^(EMPRESA|RAZ[AÃ]O\s+SOCIAL)$/i.test(text.trim())) {
       // Scan next few lines for a company-like name
       for (let k = i + 1; k < Math.min(i + 4, headerEnd); k++) {
         const nearText = lines[k].text.trim();
