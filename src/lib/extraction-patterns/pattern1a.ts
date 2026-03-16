@@ -2103,14 +2103,20 @@ const extractAnnualReport = (pagesItems: TextItem[][]): Pattern1aResult => {
         const posEvent = parseEventLineByItems(line, vencX!, descX!, refX);
         if (posEvent) {
           const isVenc = posEvent.vencimento !== '0' && posEvent.vencimento !== '';
-          rawEvents.push({
-            month: currentMonth,
-            codigo: posEvent.codigo,
-            descricao: posEvent.descricao,
-            referencia: posEvent.referencia,
-            valor: isVenc ? posEvent.vencimento : posEvent.desconto,
-          });
-          continue;
+          const isDesc = posEvent.desconto !== '0' && posEvent.desconto !== '';
+          if (isVenc) {
+            rawEvents.push({
+              month: currentMonth, codigo: posEvent.codigo, descricao: posEvent.descricao,
+              referencia: posEvent.referencia, valor: posEvent.vencimento, tipo: 'vencimento',
+            });
+          }
+          if (isDesc) {
+            rawEvents.push({
+              month: currentMonth, codigo: posEvent.codigo, descricao: posEvent.descricao,
+              referencia: posEvent.referencia, valor: posEvent.desconto, tipo: 'desconto',
+            });
+          }
+          if (isVenc || isDesc) continue;
         }
       }
 
