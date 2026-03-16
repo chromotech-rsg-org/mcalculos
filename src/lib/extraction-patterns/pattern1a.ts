@@ -1064,7 +1064,7 @@ const extractEvents = (lines: LayoutLine[]): {
       continue;
     }
     
-    // Stop at footer labels
+    // Stop at footer/resume labels
     if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !/Evento|Discrimina|Descri/i.test(text)) break;
     if (/Sal\.\s*Contr/i.test(text)) break;
     if (/SAL[AÁ]RIO\s+CONTR/i.test(text)) break;
@@ -1073,6 +1073,7 @@ const extractEvents = (lines: LayoutLine[]): {
     if (/Local\s+do\s+Pagamento/i.test(text)) break;
     if (/Assinado\s+eletronicamente/i.test(text)) break;
     if (/Fls\.?\s*:/i.test(text)) break;
+    if (/^Resumo$/i.test(text.trim())) break;
     if (/Parab[eé]ns/i.test(text)) continue; // Skip birthday messages inside events
     
     // Try to extract period from "Mês/Ano" column (e.g. "8 / 2020" or "03 / 2019")
@@ -1145,8 +1146,8 @@ const extractFooter = (lines: LayoutLine[]): {
         { regex: /Sal[aá]rio\s+Base/i, name: 'salarioBase' },
         { regex: /Sal[aá]rio\s+Contr\.?\s*INSS|Sal\.\s*Contr\.?\s*INSS/i, name: 'salarioContrInss' },
         { regex: /Faixa\s+IRRF/i, name: 'faixaIrrf' },
-        { regex: /Total\s+de\s+Vencimentos/i, name: 'totalVencimentos' },
-        { regex: /Total\s+de\s+Descontos/i, name: 'totalDescontos' },
+        { regex: /Total\s+de\s+(Vencimentos|Proventos)/i, name: 'totalVencimentos' },
+        { regex: /Total\s+de\s+Descontos?/i, name: 'totalDescontos' },
       ];
       
       for (const fl of footerLabels) {
@@ -1184,13 +1185,15 @@ const extractFooter = (lines: LayoutLine[]): {
     }
     
     // Second footer row: BASE CÁLC. FGTS, FGTS DO MÊS, BASE CALCULO IRRF, VALOR LÍQUIDO
-    if (/Base\s+C[aá]lc\.?\s*FGTS/i.test(text) || (/FGTS\s+do\s+M[eê]s/i.test(text) && /Base\s+C[aá]lculo?\s*IRRF/i.test(text))) {
+    if (/Base\s+(?:para\s+|C[aá]lc?\.?\s*)?FGTS/i.test(text) || (/FGTS\s+do\s+M[eê]s/i.test(text) && /Base\s+C[aá]l(?:c\.?|culo?)?\s*IRRF/i.test(text))) {
       const labelPositions2: { label: string; x: number }[] = [];
       const footerLabels2 = [
-        { regex: /Base\s+C[aá]lc\.?\s*FGTS/i, name: 'baseFgts' },
+        { regex: /Base\s+(?:para\s+|C[aá]lc?\.?\s*)?FGTS/i, name: 'baseFgts' },
         { regex: /FGTS\s+do\s+M[eê]s/i, name: 'fgtsMes' },
-        { regex: /Base\s+C[aá]lculo?\s*IRRF/i, name: 'baseIrrf' },
-        { regex: /Valor\s+L[ií]quido/i, name: 'valorLiquido' },
+        { regex: /Base\s+C[aá]l(?:c\.?|culo?)?\s*IRRF/i, name: 'baseIrrf' },
+        { regex: /(?:Valor\s+)?L[ií]quido(?:\s+a\s+Receber)?/i, name: 'valorLiquido' },
+        { regex: /Total\s+de\s+(Proventos|Vencimentos)/i, name: 'totalVencimentos' },
+        { regex: /Total\s+de\s+Descontos?/i, name: 'totalDescontos' },
       ];
       
       for (const fl of footerLabels2) {
@@ -1257,14 +1260,19 @@ const extractFooter = (lines: LayoutLine[]): {
       }
     }
     if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text) && !result.salarioBase) {
-      for (let k = i + 1; k < Math.min(i + 3, lines.length); k++) {
+      for (let k = i + 1; k < Math.min(i + 4, lines.length); k++) {
         if (/Sal[aá]rio\s+Fixo/i.test(lines[k].text)) {
           result.salarioBase = getAlignedValue(lines, k, /Sal[aá]rio/i);
+          // Also try: "Salário Fixo" label with numeric value on same line
+          if (!result.salarioBase) {
+            const fixoVals = lines[k].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
+            if (fixoVals.length > 0) result.salarioBase = fixoVals[0].str.trim();
+          }
           break;
         }
       }
     }
-    if (/Base\s+(?:para\s+|C[aá]lc\.?\s*)?FGTS/i.test(text) && !result.baseFgts) {
+    if (/Base\s+(?:para\s+|C[aá]lc?\.?\s*)?FGTS/i.test(text) && !result.baseFgts) {
       result.baseFgts = getAlignedValue(lines, i, /Base/i);
       if (!result.baseFgts && i + 1 < lines.length) {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
@@ -1278,7 +1286,7 @@ const extractFooter = (lines: LayoutLine[]): {
         if (nextVals.length > 0) result.fgtsMes = nextVals[0].str.trim();
       }
     }
-    if (/Base\s+(?:Cal\.?\s*|C[aá]lculo?\s*)?IRRF/i.test(text) && !result.baseIrrf) {
+    if (/Base\s+(?:C[aá]l\.?\s*|C[aá]lculo?\s*|para\s+)?IRRF/i.test(text) && !result.baseIrrf) {
       result.baseIrrf = getAlignedValue(lines, i, /Base.*IRRF/i);
       if (!result.baseIrrf) result.baseIrrf = getAlignedValue(lines, i, /^Base/i);
       if (!result.baseIrrf && i + 1 < lines.length) {
@@ -1303,15 +1311,15 @@ const extractFooter = (lines: LayoutLine[]): {
         if (nextVals.length > 0) result.faixaIrrf = nextVals[0].str.trim();
       }
     }
-    if (/Total\s+de\s+Vencimentos/i.test(text) && !result.totalVencimentos) {
-      result.totalVencimentos = getAlignedValue(lines, i, /Total\s+de\s+Vencimentos/i);
+    if (/Total\s+de\s+(Vencimentos|Proventos)/i.test(text) && !result.totalVencimentos) {
+      result.totalVencimentos = getAlignedValue(lines, i, /Total\s+de\s+(Vencimentos|Proventos)/i);
       if (!result.totalVencimentos && i + 1 < lines.length) {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
         if (nextVals.length > 0) result.totalVencimentos = nextVals[0].str.trim();
       }
     }
-    if (/Total\s+de\s+Descontos/i.test(text) && !result.totalDescontos) {
-      result.totalDescontos = getAlignedValue(lines, i, /Total\s+de\s+Descontos/i);
+    if (/Total\s+de\s+Descontos?/i.test(text) && !result.totalDescontos) {
+      result.totalDescontos = getAlignedValue(lines, i, /Total\s+de\s+Descontos?/i);
       if (!result.totalDescontos && i + 1 < lines.length) {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
         if (nextVals.length > 0) result.totalDescontos = nextVals[0].str.trim();
@@ -1323,10 +1331,23 @@ const extractFooter = (lines: LayoutLine[]): {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
         if (nextVals.length > 0) result.valorLiquido = nextVals[0].str.trim();
       }
-      // Also try standalone number on same line
+      // Try standalone number on same line (skip "=>" arrows)
       if (!result.valorLiquido) {
-        const m = text.match(/(?:TOTAL\s+)?L[IÍ]QUIDO[:\s]*([\d.,]+)/i);
+        const m = text.replace(/=>/g, '').match(/L[ií]quido(?:\s+a\s+Receber)?[:\s]*([\d.,]+)/i);
         if (m) result.valorLiquido = m[1];
+      }
+      // Try: line has "Líquido a Receber =>" then value items after arrow
+      if (!result.valorLiquido) {
+        const arrowIdx = items.findIndex(it => it.str.trim() === '=>');
+        if (arrowIdx >= 0) {
+          for (let k = arrowIdx + 1; k < items.length; k++) {
+            const val = items[k].str.trim();
+            if (/^[\d.,]+$/.test(val) && val.includes(',')) {
+              result.valorLiquido = val;
+              break;
+            }
+          }
+        }
       }
     }
   }
