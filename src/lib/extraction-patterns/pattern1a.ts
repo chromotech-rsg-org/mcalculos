@@ -905,7 +905,7 @@ const parseEventLineByItems = (
   if (!descricao) return null;
   
   // Classify numeric values by column position
-  // When columns are too close (<80px), use code-based heuristic instead of position
+  // When columns are too close (<40px), use code-based heuristic instead of position
   const columnsClose = Math.abs(vencX - descX) < 40;
   let referencia = '';
   let vencimento = '0';
@@ -927,14 +927,49 @@ const parseEventLineByItems = (
       desconto = numericItems[2].str.trim();
     }
   } else {
+    // Use RIGHT EDGE of value items for classification (monetary values are right-aligned)
+    // This is more accurate than center because right-aligned values have their right edge
+    // aligned with the column, while their center may drift towards adjacent columns
+    
+    // First pass: identify reference values
+    const refItems: Set<TextItem> = new Set();
     for (const ni of numericItems) {
+      const rightEdge = ni.x + ni.width;
+      if (refX !== null && Math.abs(rightEdge - refX) < Math.abs(rightEdge - vencX) && Math.abs(rightEdge - refX) < Math.abs(rightEdge - descX)) {
+        referencia = ni.str.trim();
+        refItems.add(ni);
+      }
+    }
+    
+    // Second pass: classify remaining values
+    const nonRefItems = numericItems.filter(ni => !refItems.has(ni));
+    
+    if (nonRefItems.length === 1) {
+      // Single value: use right-edge position, with isDescontoByCode as tiebreaker
+      const ni = nonRefItems[0];
       const val = ni.str.trim();
-      const centerX = ni.x + ni.width / 2;
+      const rightEdge = ni.x + ni.width;
+      const distVenc = Math.abs(rightEdge - vencX);
+      const distDesc = Math.abs(rightEdge - descX);
       
-      if (refX !== null && Math.abs(centerX - refX) < Math.abs(centerX - vencX) && Math.abs(centerX - refX) < Math.abs(centerX - descX)) {
-        referencia = val;
+      // If distances are very close (within 20% of each other), use code heuristic
+      const minDist = Math.min(distVenc, distDesc);
+      const maxDist = Math.max(distVenc, distDesc);
+      if (maxDist > 0 && minDist / maxDist > 0.7) {
+        // Ambiguous position - use code-based heuristic
+        if (isDescontoByCode(codigo, descricao)) desconto = val;
+        else vencimento = val;
       } else {
-        const col = classifyValueColumn(centerX, vencX, descX);
+        const col = classifyValueColumn(rightEdge, vencX, descX);
+        if (col === 'vencimento') vencimento = val;
+        else desconto = val;
+      }
+    } else {
+      // Multiple values: classify by right-edge position
+      for (const ni of nonRefItems) {
+        const val = ni.str.trim();
+        const rightEdge = ni.x + ni.width;
+        const col = classifyValueColumn(rightEdge, vencX, descX);
         if (col === 'vencimento') vencimento = val;
         else desconto = val;
       }
