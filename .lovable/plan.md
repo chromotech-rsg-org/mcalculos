@@ -1,5 +1,15 @@
 
 
+## Detecção de PDF Rotacionado (Acoforte) - IMPLEMENTADO
+
+### Mudanças Implementadas
+
+1. **Detecção automática de rotação 90°** - `extractTextItems` agora analisa a matriz de transformação (tx[0] vs tx[1]) para detectar PDFs rotacionados
+2. **Swap de coordenadas X↔Y** - Para PDFs rotacionados, PDF_Y → visual_X e (maxX - PDF_X) → visual_Y, permitindo que `groupIntoLines` funcione corretamente
+3. **`isDescontoByCode` normaliza texto espaçado** - "I N S S" → "INSS" para correta classificação de descontos
+4. **Threshold `columnsClose` reduzido** - De 80px para 40px, para PDFs rotacionados onde as colunas ficam mais próximas após swap
+
+
 ## Correcao da Extracao de Holerites Keypar (PDF 2) - IMPLEMENTADO
 
 ### Mudancas Implementadas

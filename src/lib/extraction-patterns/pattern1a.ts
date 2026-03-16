@@ -41,10 +41,12 @@ const isValue = (s: string): boolean => {
 const isDescontoByCode = (codigo: string, descricao: string): boolean => {
   const code = parseInt(codigo, 10);
   if (code >= 2000 && code < 3000) return true;
-  if (/\bDesc\.?|Desconto/i.test(descricao)) return true;
-  if (/\bINSS\b/i.test(descricao) && !/\bBase\b/i.test(descricao)) return true;
-  if (/\bIRRF\b/i.test(descricao) && !/\bBase\b/i.test(descricao)) return true;
-  if (/Contribui[cç][aã]o\s+Assistencial/i.test(descricao)) return true;
+  // Normalize spaced-out text: "I N S S" → "INSS", "I R R F" → "IRRF"
+  const normalized = descricao.replace(/\b([A-Z])\s+(?=[A-Z]\b)/gi, '$1');
+  if (/\bDesc\.?|Desconto/i.test(normalized)) return true;
+  if (/\bINSS\b/i.test(normalized) && !/\bBase\b/i.test(normalized)) return true;
+  if (/\bIRRF\b/i.test(normalized) && !/\bBase\b/i.test(normalized)) return true;
+  if (/Contribui[cç][aã]o\s+Assistencial/i.test(normalized)) return true;
   return false;
 };
 
@@ -904,7 +906,7 @@ const parseEventLineByItems = (
   
   // Classify numeric values by column position
   // When columns are too close (<80px), use code-based heuristic instead of position
-  const columnsClose = Math.abs(vencX - descX) < 80;
+  const columnsClose = Math.abs(vencX - descX) < 40;
   let referencia = '';
   let vencimento = '0';
   let desconto = '0';

@@ -19,24 +19,64 @@ export interface LayoutLine {
 
 /**
  * Extract positioned text items from a pdf.js page.
+ * Automatically detects 90° rotated pages and swaps coordinates
+ * so that groupIntoLines works correctly for rotated layouts.
  */
 export const extractTextItems = async (page: any): Promise<TextItem[]> => {
   const content = await page.getTextContent();
-  const items: TextItem[] = [];
+
+  // First pass: collect raw data and detect rotation
+  interface RawItem { str: string; tx: number[]; width: number; height: number; }
+  const rawItems: RawItem[] = [];
 
   for (const item of content.items) {
     if (!item.str || item.str.trim() === '') continue;
     const tx = item.transform;
-    items.push({
+    rawItems.push({
       str: item.str,
-      x: tx[4],
-      y: tx[5],
+      tx: [...tx],
       width: item.width,
       height: item.height ?? Math.abs(tx[3]),
     });
   }
 
-  return items;
+  if (rawItems.length === 0) return [];
+
+  // Detect 90° rotation: normal text has |tx[0]| >> |tx[1]|,
+  // rotated 90° has |tx[0]| << |tx[1]|
+  let rotatedCount = 0;
+  for (const item of rawItems) {
+    if (Math.abs(item.tx[0]) < Math.abs(item.tx[1]) * 0.5) rotatedCount++;
+  }
+  const isRotated = rotatedCount > rawItems.length * 0.5;
+
+  if (!isRotated) {
+    // Normal (non-rotated) page
+    return rawItems.map(item => ({
+      str: item.str,
+      x: item.tx[4],
+      y: item.tx[5],
+      width: item.width,
+      height: item.height,
+    }));
+  }
+
+  // Rotated page: swap X↔Y coordinates
+  // PDF X → visual Y (vertical row), PDF Y → visual X (horizontal column)
+  // We need to flip Y so that items at the top of the visual page get highest new_y
+  let maxX = 0;
+  for (const item of rawItems) {
+    const itemBottom = item.tx[4] + item.width; // approximate extent in X direction
+    if (itemBottom > maxX) maxX = itemBottom;
+  }
+
+  return rawItems.map(item => ({
+    str: item.str,
+    x: item.tx[5],                    // visual X = PDF Y
+    y: maxX - item.tx[4],             // visual Y = maxX - PDF X (flip for top-to-bottom)
+    width: item.width,                // text advance (along reading direction)
+    height: Math.abs(item.tx[1]),     // font size from rotation component
+  }));
 };
 
 /**
