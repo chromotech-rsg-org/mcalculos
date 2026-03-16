@@ -43,7 +43,7 @@ const isDescontoByCode = (codigo: string, descricao: string): boolean => {
   if (code >= 2000 && code < 3000) return true;
   // Normalize spaced-out text: "I N S S" → "INSS", "I R R F" → "IRRF"
   const normalized = descricao.replace(/\b([A-Z])\s+(?=[A-Z]\b)/gi, '$1');
-  if (/\bDesc\.?|Desconto/i.test(normalized)) return true;
+  if (/\bDesc\.\s|Descto\.?|Desconto/i.test(normalized)) return true;
   if (/\bINSS\b/i.test(normalized) && !/\bBase\b/i.test(normalized)) return true;
   if (/\bIRRF\b/i.test(normalized) && !/\bBase\b/i.test(normalized)) return true;
   if (/Contribui[cç][aã]o\s+Assistencial/i.test(normalized)) return true;
@@ -870,10 +870,15 @@ const parseEventLineByItems = (
   for (let j = 0; j < line.items.length; j++) {
     const it = line.items[j];
     if (!/^\d{3,4}$/.test(it.str.trim())) continue;
-    // Skip if preceded by "/" within previous 2 items (it's a year)
+    // Skip if this item is a YEAR directly preceded by "/" (the item right before it is "/")
+    // Only skip when the item immediately after "/" is THIS item (not separated by other items)
     let isYear = false;
-    for (let k = j - 1; k >= Math.max(0, j - 2); k--) {
-      if (line.items[k].str.trim() === '/') { isYear = true; break; }
+    if (j >= 1 && line.items[j - 1].str.trim() === '/') {
+      // "/" is right before this number → it's a year like "/2020"
+      isYear = true;
+    } else if (j >= 2 && line.items[j - 1].str.trim() === '' && line.items[j - 2].str.trim() === '/') {
+      // "/" then empty then this number
+      isYear = true;
     }
     if (isYear) continue;
     eventCodeItem = it;
@@ -2184,7 +2189,9 @@ const extractAnnualReport = (pagesItems: TextItem[][]): Pattern1aResult => {
         }
 
         if (valor) {
-          rawEvents.push({ month: currentMonth, codigo, descricao, referencia, valor });
+          // Use isDescontoByCode to set tipo for single-occurrence events
+          const tipo = isDescontoByCode(codigo, descricao) ? 'desconto' : 'vencimento';
+          rawEvents.push({ month: currentMonth, codigo, descricao, referencia, valor, tipo });
         }
       }
     }
