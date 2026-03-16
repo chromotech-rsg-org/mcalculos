@@ -1331,10 +1331,23 @@ const extractFooter = (lines: LayoutLine[]): {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
         if (nextVals.length > 0) result.valorLiquido = nextVals[0].str.trim();
       }
-      // Also try standalone number on same line
+      // Try standalone number on same line (skip "=>" arrows)
       if (!result.valorLiquido) {
-        const m = text.match(/(?:TOTAL\s+)?L[IÍ]QUIDO[:\s]*([\d.,]+)/i);
+        const m = text.replace(/=>/g, '').match(/L[ií]quido(?:\s+a\s+Receber)?[:\s]*([\d.,]+)/i);
         if (m) result.valorLiquido = m[1];
+      }
+      // Try: line has "Líquido a Receber =>" then value items after arrow
+      if (!result.valorLiquido) {
+        const arrowIdx = items.findIndex(it => it.str.trim() === '=>');
+        if (arrowIdx >= 0) {
+          for (let k = arrowIdx + 1; k < items.length; k++) {
+            const val = items[k].str.trim();
+            if (/^[\d.,]+$/.test(val) && val.includes(',')) {
+              result.valorLiquido = val;
+              break;
+            }
+          }
+        }
       }
     }
   }
