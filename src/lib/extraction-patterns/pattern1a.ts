@@ -1979,7 +1979,280 @@ export const extractPattern1aPage = (items: TextItem[]): {
   };
 };
 
+// ======== Annual Report (PLANOVA-style) ========
+
+/**
+ * Detect if the document is an annual report where events span multiple months
+ * across pages with a "Mês / Ano" or "Data" column in the event table header.
+ */
+const isAnnualReport = (pagesItems: TextItem[][]): boolean => {
+  for (let p = 0; p < Math.min(3, pagesItems.length); p++) {
+    const lines = groupIntoLines(pagesItems[p]);
+    for (const line of lines) {
+      const text = line.text;
+      // "Mês / Ano" + "Evento/Código" or "Discriminação/Descrição"
+      if (/M[eê]s\s*\/?\s*Ano/i.test(text) &&
+          (/Evento|C[oó]d/i.test(text) || /Discrimina|Descri/i.test(text))) {
+        return true;
+      }
+      // "Data" + "Código" + "Descrição" + "Valor/Total"
+      const words = text.split(/\s+/);
+      if (/^Data$/i.test(words[0]) && /C[oó]d/i.test(text) && /Descri/i.test(text) && /Valor|Total/i.test(text)) {
+        return true;
+      }
+    }
+  }
+  return false;
+};
+
+interface AnnualRawEvent {
+  month: string;
+  codigo: string;
+  descricao: string;
+  referencia: string;
+  valor: string;
+}
+
+/**
+ * Extract annual report (PLANOVA-style) where events span multiple months
+ * across multiple pages with a single header block.
+ * Events appear TWICE per month per código+descrição: first = vencimento, second = desconto.
+ */
+const extractAnnualReport = (pagesItems: TextItem[][]): Pattern1aResult => {
+  // 1. Extract header/employee/bank from page 1
+  const page1Lines = groupIntoLines(pagesItems[0]);
+  const header = extractHeader(page1Lines);
+  const employee = extractEmployee(page1Lines);
+  const bank = extractBankInfo(page1Lines);
+
+  // Extract dynamic fields from page 1 header area
+  const { headerIdx: p1HeaderIdx } = detectEventHeader(page1Lines);
+  const headerDynamicFields = extractAllFields(page1Lines, p1HeaderIdx, page1Lines.length);
+
+  // 2. Collect raw events from ALL pages
+  const rawEvents: AnnualRawEvent[] = [];
+  let currentMonth = '';
+
+  for (let p = 0; p < pagesItems.length; p++) {
+    const lines = groupIntoLines(pagesItems[p]);
+    const { headerIdx, vencX, descX, refX } = detectEventHeader(lines);
+    const hasSeparateColumns = vencX !== null && descX !== null && Math.abs(vencX - descX) > 60;
+
+    const startIdx = headerIdx >= 0 ? headerIdx + 1 : 0;
+
+    for (let i = startIdx; i < lines.length; i++) {
+      const line = lines[i];
+      const text = line.text.trim();
+
+      if (!text) continue;
+      if (isStructuralLine(text)) continue;
+      if (/^Fls\.?\s*:/i.test(text)) continue;
+      if (/Documento\s+assinado/i.test(text)) continue;
+      if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text)) continue;
+      if (/Sal[aá]rio\s+Fixo/i.test(text)) continue;
+      if (/BANCO\s+\w/i.test(text) && !/^\d{3,4}\s/.test(text)) continue;
+      if (/^(Matr[ií]cula|Nome|Fun[cç][aã]o|Bairro|Cidade|PIS|CPF)/i.test(text)) continue;
+      if (/^(Empresa|CNPJ|Demonstrativo)/i.test(text)) continue;
+      if (/Parab[eé]ns/i.test(text)) continue;
+
+      // Footer - stop processing events
+      if (/Base\s+(?:para\s+|C[aá]lc?\.?\s*)?FGTS/i.test(text)) break;
+      if (/Total\s+de\s+(Proventos|Vencimentos|Desconto)/i.test(text)) break;
+      if (/L[ií]quido\s+a\s+Receber/i.test(text)) break;
+      if (/Sal\.\s*Cont?\.\s*INSS/i.test(text)) break;
+      if (/Base\s+C[aá]l.*IRRF/i.test(text)) break;
+      if (/Base\s+IR\s+PLR/i.test(text)) break;
+      if (/Pens[aã]o\s+Alim/i.test(text)) break;
+
+      // Standalone month heading: "5/2022" or "10/2022"
+      const monthHeading = text.match(/^(\d{1,2})\/(\d{4})\s*$/);
+      if (monthHeading) {
+        currentMonth = `${monthHeading[1].padStart(2, '0')}/${monthHeading[2]}`;
+        continue;
+      }
+
+      // Extract month prefix from event line: "M/YYYY CODE ..."
+      let eventText = text;
+      const monthPrefix = text.match(/^(\d{1,2})\/(\d{4})\s+/);
+      if (monthPrefix) {
+        currentMonth = `${monthPrefix[1].padStart(2, '0')}/${monthPrefix[2]}`;
+        eventText = text.substring(monthPrefix[0].length);
+      }
+
+      if (!currentMonth) continue;
+
+      // Try positional parsing on pages with separate Proventos/Descontos columns
+      if (hasSeparateColumns) {
+        const posEvent = parseEventLineByItems(line, vencX!, descX!, refX);
+        if (posEvent) {
+          const isVenc = posEvent.vencimento !== '0' && posEvent.vencimento !== '';
+          rawEvents.push({
+            month: currentMonth,
+            codigo: posEvent.codigo,
+            descricao: posEvent.descricao,
+            referencia: posEvent.referencia,
+            valor: isVenc ? posEvent.vencimento : posEvent.desconto,
+          });
+          continue;
+        }
+      }
+
+      // Text-based parsing: CODE DESC [REF] VALUE
+      const eventMatch = eventText.match(/^(\d{3,4})\s+(.+?)\s+([\d.,]+(?:\s+[\d.,]+)?)\s*$/);
+      if (eventMatch) {
+        const codigo = eventMatch[1];
+        const descricao = eventMatch[2].replace(/\s+/g, ' ').trim();
+        const valuesStr = eventMatch[3];
+        const values = valuesStr.match(/[\d.,]+/g) || [];
+
+        // Skip footer-like lines
+        if (/Sal[aá]rio|Base\s+FGTS|Total|L[ií]quido/i.test(descricao)) continue;
+
+        let referencia = '';
+        let valor = '';
+
+        if (values.length === 1) {
+          valor = values[0];
+        } else if (values.length >= 2) {
+          referencia = values[0];
+          valor = values[1];
+        }
+
+        if (valor) {
+          rawEvents.push({ month: currentMonth, codigo, descricao, referencia, valor });
+        }
+      }
+    }
+  }
+
+  // 3. Extract footer from last page
+  const lastPageLines = groupIntoLines(pagesItems[pagesItems.length - 1]);
+  const footer = extractFooter(lastPageLines);
+
+  // 4. Group by month and deduplicate
+  const monthMap = new Map<string, AnnualRawEvent[]>();
+  for (const ev of rawEvents) {
+    if (!monthMap.has(ev.month)) monthMap.set(ev.month, []);
+    monthMap.get(ev.month)!.push(ev);
+  }
+
+  // Sort months chronologically
+  const sortedMonthKeys = Array.from(monthMap.keys()).sort((a, b) => {
+    const [ma, ya] = a.split('/').map(Number);
+    const [mb, yb] = b.split('/').map(Number);
+    return ya !== yb ? ya - yb : ma - mb;
+  });
+
+  // Build fields from header/employee/bank (shared across months)
+  const sharedFields: ExtractedField[] = [...headerDynamicFields];
+  const existingKeys = new Set(sharedFields.map(f => `${f.key.toLowerCase()}::${f.value}`));
+  const addSharedField = (key: string, value: string) => {
+    if (!value) return;
+    const uid = `${key.toLowerCase()}::${value}`;
+    if (existingKeys.has(uid)) return;
+    if (sharedFields.some(f => f.key.toLowerCase() === key.toLowerCase())) return;
+    sharedFields.push({ key, value });
+    existingKeys.add(uid);
+  };
+
+  addSharedField('Empresa', header.empresa);
+  addSharedField('CNPJ', header.cnpj);
+  addSharedField('Local', header.local);
+  addSharedField('Centro de Custo', header.centroCusto);
+  addSharedField('Tipo de Folha', header.tipoFolha);
+  addSharedField('Código Funcionário', employee.codigo);
+  addSharedField('Nome Funcionário', employee.nome);
+  addSharedField('CBO', employee.cbo);
+  addSharedField('Cargo', employee.cargo);
+  addSharedField('Data de Admissão', employee.dataAdmissao);
+  addSharedField('Endereço', employee.endereco);
+  addSharedField('Bairro', employee.bairro);
+  addSharedField('Cidade', employee.cidade);
+  addSharedField('CEP', employee.cep);
+  addSharedField('UF', employee.uf);
+  addSharedField('PIS', employee.pis);
+  addSharedField('CPF', employee.cpf);
+  addSharedField('Identidade', employee.identidade);
+  addSharedField('Data Crédito', employee.dataCredito);
+  addSharedField('Dep. Sal. Fam.', employee.depSalFam);
+  addSharedField('Dep IR', employee.depIR);
+  addSharedField('Dep SF', employee.depSF);
+  addSharedField('Banco', bank.banco);
+  addSharedField('Agência', bank.agencia);
+  addSharedField('Conta Corrente', bank.contaCorrente);
+  addSharedField('Salário Base', footer.salarioBase);
+  addSharedField('Base FGTS', footer.baseFgts);
+  addSharedField('FGTS do Mês', footer.fgtsMes);
+  addSharedField('Base IRRF', footer.baseIrrf);
+  addSharedField('Total Vencimentos', footer.totalVencimentos);
+  addSharedField('Total Descontos', footer.totalDescontos);
+  addSharedField('Valor Líquido', footer.valorLiquido);
+
+  const months: ExtractedMonth[] = [];
+
+  for (const monthKey of sortedMonthKeys) {
+    const events = monthMap.get(monthKey)!;
+
+    // Dedup: for each código+descrição, first occurrence = vencimento, second = desconto
+    const deduped: PayslipEvent[] = [];
+    const seen = new Map<string, number>(); // key -> index in deduped
+
+    for (const ev of events) {
+      const key = `${ev.codigo}|${ev.descricao}`;
+
+      if (!seen.has(key)) {
+        // First occurrence = vencimento
+        seen.set(key, deduped.length);
+        deduped.push({
+          codigo: ev.codigo,
+          descricao: ev.descricao,
+          referencia: ev.referencia,
+          vencimento: ev.valor,
+          desconto: '0',
+        });
+      } else {
+        // Second occurrence = desconto
+        const idx = seen.get(key)!;
+        deduped[idx].desconto = ev.valor;
+        if (ev.referencia && !deduped[idx].referencia) {
+          deduped[idx].referencia = ev.referencia;
+        }
+        // Clear so a third occurrence starts fresh
+        seen.delete(key);
+      }
+    }
+
+    months.push({
+      month: monthKey,
+      fields: sharedFields.map(f => ({ ...f })), // clone for each month
+      competencia: monthKey,
+      eventos: deduped,
+      totalVencimentos: '',
+      totalDescontos: '',
+      valorLiquido: '',
+    });
+  }
+
+  // Add footer totals to the last month
+  if (months.length > 0) {
+    const last = months[months.length - 1];
+    last.totalVencimentos = footer.totalVencimentos;
+    last.totalDescontos = footer.totalDescontos;
+    last.valorLiquido = footer.valorLiquido;
+  }
+
+  const employeeName = employee.nome || sharedFields.find(f => /Nome/i.test(f.key))?.value || '';
+  const cnpj = header.cnpj || sharedFields.find(f => /CNPJ/i.test(f.key))?.value || '';
+
+  return { employeeName, cnpj, months };
+};
+
 export const extractPattern1a = (pagesItems: TextItem[][]): Pattern1aResult => {
+  // Check if this is an annual report (PLANOVA-style)
+  if (isAnnualReport(pagesItems)) {
+    return extractAnnualReport(pagesItems);
+  }
+
   let employeeName = '';
   let cnpj = '';
   const months: ExtractedMonth[] = [];
