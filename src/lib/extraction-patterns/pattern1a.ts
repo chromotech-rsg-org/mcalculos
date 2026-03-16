@@ -499,7 +499,7 @@ const extractEmployee = (lines: LayoutLine[]): {
     if (!result.cargo) {
       // Item-based: "Função" or "Cargo" label
       for (let j = 0; j < items.length; j++) {
-        if (/^(Fun[cç][aã]o|Cargo)$/i.test(items[j].str.trim())) {
+        if (/^(Fun[cç][aã]o|Cargo|Cargo\s*\/\s*N[ií]vel)$/i.test(items[j].str.trim())) {
           const parts: string[] = [];
           for (let k = j + 1; k < items.length; k++) {
             const val = items[k].str.trim();
