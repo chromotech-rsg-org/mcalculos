@@ -1986,6 +1986,8 @@ export const extractPattern1aPage = (items: TextItem[]): {
  * across pages with a "Mês / Ano" or "Data" column in the event table header.
  */
 const isAnnualReport = (pagesItems: TextItem[][]): boolean => {
+  // Step 1: Check for "Mês / Ano" column in event table headers (first 3 pages)
+  let hasMesAnoColumn = false;
   for (let p = 0; p < Math.min(3, pagesItems.length); p++) {
     const lines = groupIntoLines(pagesItems[p]);
     for (const line of lines) {
@@ -1993,16 +1995,28 @@ const isAnnualReport = (pagesItems: TextItem[][]): boolean => {
       // "Mês / Ano" + "Evento/Código" or "Discriminação/Descrição"
       if (/M[eê]s\s*\/?\s*Ano/i.test(text) &&
           (/Evento|C[oó]d/i.test(text) || /Discrimina|Descri/i.test(text))) {
-        return true;
-      }
-      // "Data" + "Código" + "Descrição" + "Valor/Total"
-      const words = text.split(/\s+/);
-      if (/^Data$/i.test(words[0]) && /C[oó]d/i.test(text) && /Descri/i.test(text) && /Valor|Total/i.test(text)) {
-        return true;
+        hasMesAnoColumn = true;
+        break;
       }
     }
+    if (hasMesAnoColumn) break;
   }
-  return false;
+
+  if (!hasMesAnoColumn) return false;
+
+  // Step 2: Negative check — if page 2 has its own header (CNPJ/Referência/Competência),
+  // it's per-page payslips, NOT an annual report
+  if (pagesItems.length >= 2) {
+    const page2Lines = groupIntoLines(pagesItems[1]);
+    const page2HasOwnHeader = page2Lines.some(l =>
+      /CNPJ[:\s]*\d/i.test(l.text) ||
+      /Refer[eê]ncia[:\s]*\d/i.test(l.text) ||
+      /Compet[eê]ncia[:\s]*\d/i.test(l.text)
+    );
+    if (page2HasOwnHeader) return false;
+  }
+
+  return true;
 };
 
 interface AnnualRawEvent {
