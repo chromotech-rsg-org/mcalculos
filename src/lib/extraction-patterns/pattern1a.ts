@@ -2027,6 +2027,7 @@ interface AnnualRawEvent {
   descricao: string;
   referencia: string;
   valor: string;
+  tipo?: 'vencimento' | 'desconto'; // when positional parser knows the column
 }
 
 /**
