@@ -2,6 +2,15 @@ import * as XLSX from 'xlsx';
 import { ExtractedData, PayslipEvent, TabData } from '@/types';
 import { buildTabsFromMonths } from '@/lib/build-tabs';
 
+/** Rebuild tabs from months data to reflect user edits (deletions, changes) */
+const rebuildLiveTabs = (data: ExtractedData): Record<string, TabData> | null => {
+  if (!data.months || data.months.length === 0) return null;
+  const hasEvents = data.months.some(m => m.eventos && m.eventos.length > 0);
+  if (!hasEvents) return null;
+  const tabs = buildTabsFromMonths(data.months, ['vencimentos', 'descontos', 'quantidade']);
+  return Object.keys(tabs).length > 0 ? tabs : null;
+};
+
 /**
  * Determine the max number of events across all months
  */
@@ -88,12 +97,14 @@ const getOrderedHeaders = (fieldKeys: string[], maxEvents: number): string[] => 
 };
 
 export const exportToExcel = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
-  // Check if we have new tab structure
-  if (data.tabs && Object.keys(data.tabs).length > 0) {
+  // Always rebuild tabs from months to reflect user edits
+  const liveTabs = rebuildLiveTabs(data);
+  
+  if (liveTabs && Object.keys(liveTabs).length > 0) {
     const workbook = XLSX.utils.book_new();
     
     // Create a worksheet for each tab
-    Object.entries(data.tabs).forEach(([tabType, tabData]) => {
+    Object.entries(liveTabs).forEach(([tabType, tabData]) => {
       if (!tabData) return;
       
       const headers = selectedColumns ? 
@@ -140,9 +151,11 @@ export const exportToExcel = (data: ExtractedData, filename: string, selectedCol
 };
 
 export const exportToCSV = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
-  // Check if we have new tab structure - export first available tab
-  if (data.tabs && Object.keys(data.tabs).length > 0) {
-    const firstTabData = Object.values(data.tabs)[0];
+  // Always rebuild tabs from months to reflect user edits
+  const liveTabs = rebuildLiveTabs(data);
+  
+  if (liveTabs && Object.keys(liveTabs).length > 0) {
+    const firstTabData = Object.values(liveTabs)[0];
     if (!firstTabData) return;
     
     const headers = selectedColumns ? 
