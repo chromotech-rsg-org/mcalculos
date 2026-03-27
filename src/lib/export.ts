@@ -151,9 +151,11 @@ export const exportToExcel = (data: ExtractedData, filename: string, selectedCol
 };
 
 export const exportToCSV = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
-  // Check if we have new tab structure - export first available tab
-  if (data.tabs && Object.keys(data.tabs).length > 0) {
-    const firstTabData = Object.values(data.tabs)[0];
+  // Always rebuild tabs from months to reflect user edits
+  const liveTabs = rebuildLiveTabs(data);
+  
+  if (liveTabs && Object.keys(liveTabs).length > 0) {
+    const firstTabData = Object.values(liveTabs)[0];
     if (!firstTabData) return;
     
     const headers = selectedColumns ? 

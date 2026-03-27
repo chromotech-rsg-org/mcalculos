@@ -5,8 +5,9 @@ import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ExtractedData, TabType } from '@/types';
+import { ExtractedData, TabType, TabData } from '@/types';
 import { exportToExcel, exportToCSV, getAllAvailableColumns } from '@/lib/export';
+import { buildTabsFromMonths } from '@/lib/build-tabs';
 import { useToast } from '@/hooks/use-toast';
 
 interface ExportColumnSelectorProps {
