@@ -166,7 +166,7 @@ const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpe
                   <TabsContent key={tab} value={tab}>
                     <div className="flex items-center justify-between mb-1">
                       <span className="text-xs text-muted-foreground">
-                        {(selectedColumnsByTab[tab] || []).length} de {data.tabs![tab]?.columns.length || 0}
+                        {(selectedColumnsByTab[tab] || []).length} de {liveTabs![tab]?.columns.length || 0}
                       </span>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="sm" className="h-6 text-xs"
