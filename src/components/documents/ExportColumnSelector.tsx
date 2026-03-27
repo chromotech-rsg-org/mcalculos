@@ -60,11 +60,11 @@ const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpe
       // Initialize per-tab columns
       const colsByTab: Record<string, string[]> = {};
       availableTabs.forEach(tab => {
-        colsByTab[tab] = data.tabs![tab]?.columns || [];
+        colsByTab[tab] = liveTabs![tab]?.columns || [];
       });
       setSelectedColumnsByTab(colsByTab);
     }
-  }, [open, availableTabs, allLegacyColumns, data.tabs]);
+  }, [open, availableTabs, allLegacyColumns, liveTabs]);
 
   const toggleTab = (tab: TabType) => {
     setSelectedTabs(prev =>
