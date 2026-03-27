@@ -72,8 +72,16 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
   const [visibleColumnKeys, setVisibleColumnKeys] = useState<string[]>([]);
   const [activeTab, setActiveTab] = useState<string>('legacy');
 
-  // Check if we have new tab data structure
-  const hasTabData = data.tabs && Object.keys(data.tabs).length > 0;
+  // Always rebuild tabs from months to reflect edits made in Detalhado/Validar
+  const liveTabs = useMemo(() => {
+    if (!data.months || data.months.length === 0) return null;
+    const hasEvents = data.months.some(m => m.eventos && m.eventos.length > 0);
+    if (!hasEvents) return null;
+    const tabs = buildTabsFromMonths(data.months, ['vencimentos', 'descontos', 'quantidade']);
+    return Object.keys(tabs).length > 0 ? tabs : null;
+  }, [data.months]);
+
+  const hasTabData = liveTabs !== null;
   
   // Legacy logic for backwards compatibility
   const maxEvents = useMemo(() => {
