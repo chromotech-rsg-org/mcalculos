@@ -177,7 +177,7 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
           {availableTabs.map(tabKey => (
             <TabsContent key={tabKey} value={tabKey} className="mt-4">
               <TabDataTable 
-                tabData={data.tabs![tabKey]} 
+                tabData={liveTabs![tabKey]} 
                 search={search}
                 setSearch={setSearch}
                 rowsPerPage={rowsPerPage}
