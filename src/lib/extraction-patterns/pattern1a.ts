@@ -1814,6 +1814,41 @@ const extractAllFields = (
         }
       }
     }
+    
+    // ---- Phase 4: Vertical label-value matching ----
+    // If this line contains multiple known labels with no values on the same line,
+    // look at the NEXT line and match items by X position.
+    const detectedLabels = detectLabelRow(lines[i]);
+    if (detectedLabels.length >= 2) {
+      const nextIdx = i + 1;
+      if (nextIdx < lines.length && 
+          !(eventsStartIdx >= 0 && nextIdx >= eventsStartIdx && nextIdx <= eventsEndIdx) &&
+          !isStructuralLine(lines[nextIdx].text)) {
+        const nextItems = lines[nextIdx].items;
+        
+        for (let li = 0; li < detectedLabels.length; li++) {
+          const labelInfo = detectedLabels[li];
+          const nextLabelX = li < detectedLabels.length - 1 
+            ? detectedLabels[li + 1].x 
+            : Infinity;
+          
+          // Collect items from next line within this label's column range
+          const valParts: string[] = [];
+          for (const ni of nextItems) {
+            if (ni.x >= labelInfo.x - 20 && ni.x < nextLabelX - 10) {
+              const val = ni.str.trim();
+              if (val && !isStructuralWord(val)) {
+                valParts.push(val);
+              }
+            }
+          }
+          
+          if (valParts.length > 0) {
+            add(labelInfo.label, valParts.join(' '));
+          }
+        }
+      }
+    }
   }
 
   return fields;
