@@ -407,6 +407,15 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
   const [events, setEvents] = useState<EventState[]>(initialEvents);
   const [selectedEvents, setSelectedEvents] = useState<Set<string>>(new Set());
 
+  // Sync state when data changes externally (e.g., edits in Detalhado, page reload)
+  React.useEffect(() => {
+    setFields(initialFields);
+  }, [initialFields]);
+
+  React.useEffect(() => {
+    setEvents(initialEvents);
+  }, [initialEvents]);
+
   // Pool of all unique strings (keys + values) for the "title" dropdown
   const allKeys = useMemo(() => {
     const set = new Set<string>();
