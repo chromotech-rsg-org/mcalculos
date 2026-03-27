@@ -88,12 +88,14 @@ const getOrderedHeaders = (fieldKeys: string[], maxEvents: number): string[] => 
 };
 
 export const exportToExcel = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
-  // Check if we have new tab structure
-  if (data.tabs && Object.keys(data.tabs).length > 0) {
+  // Always rebuild tabs from months to reflect user edits
+  const liveTabs = rebuildLiveTabs(data);
+  
+  if (liveTabs && Object.keys(liveTabs).length > 0) {
     const workbook = XLSX.utils.book_new();
     
     // Create a worksheet for each tab
-    Object.entries(data.tabs).forEach(([tabType, tabData]) => {
+    Object.entries(liveTabs).forEach(([tabType, tabData]) => {
       if (!tabData) return;
       
       const headers = selectedColumns ? 
