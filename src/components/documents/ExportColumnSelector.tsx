@@ -93,11 +93,11 @@ const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpe
         tabs: {},
       };
       selectedTabs.forEach(tab => {
-        if (data.tabs![tab]) {
-          const cols = selectedColumnsByTab[tab] || data.tabs![tab]!.columns;
+        if (liveTabs![tab]) {
+          const cols = selectedColumnsByTab[tab] || liveTabs![tab]!.columns;
           filteredData.tabs![tab] = {
             columns: cols,
-            rows: data.tabs![tab]!.rows,
+            rows: liveTabs![tab]!.rows,
           };
         }
       });
