@@ -174,7 +174,7 @@ const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpe
                           Todas
                         </Button>
                         <Button variant="ghost" size="sm" className="h-6 text-xs"
-                          onClick={() => setSelectedColumnsByTab(prev => ({ ...prev, [tab]: ['Mês'] }))}>
+                          onClick={() => setSelectedColumnsByTab(prev => ({ ...prev, [tab]: [] }))}>
                           Nenhuma
                         </Button>
                       </div>
