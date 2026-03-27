@@ -146,7 +146,7 @@ const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpe
                   />
                   {TAB_LABELS[tab]}
                   <span className="text-muted-foreground text-xs ml-auto">
-                    {data.tabs![tab]?.columns.length || 0} colunas
+                    {liveTabs![tab]?.columns.length || 0} colunas
                   </span>
                 </label>
               ))}
