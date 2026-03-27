@@ -2,6 +2,15 @@ import * as XLSX from 'xlsx';
 import { ExtractedData, PayslipEvent, TabData } from '@/types';
 import { buildTabsFromMonths } from '@/lib/build-tabs';
 
+/** Rebuild tabs from months data to reflect user edits (deletions, changes) */
+const rebuildLiveTabs = (data: ExtractedData): Record<string, TabData> | null => {
+  if (!data.months || data.months.length === 0) return null;
+  const hasEvents = data.months.some(m => m.eventos && m.eventos.length > 0);
+  if (!hasEvents) return null;
+  const tabs = buildTabsFromMonths(data.months, ['vencimentos', 'descontos', 'quantidade']);
+  return Object.keys(tabs).length > 0 ? tabs : null;
+};
+
 /**
  * Determine the max number of events across all months
  */
