@@ -26,10 +26,19 @@ const TAB_LABELS: Record<TabType, string> = {
 const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpenChange, data, filename }) => {
   const { toast } = useToast();
 
-  const hasTabData = data.tabs && Object.keys(data.tabs).length > 0;
+  // Rebuild tabs from months to reflect user edits
+  const liveTabs = useMemo(() => {
+    if (!data.months || data.months.length === 0) return null;
+    const hasEvents = data.months.some(m => m.eventos && m.eventos.length > 0);
+    if (!hasEvents) return null;
+    const tabs = buildTabsFromMonths(data.months, ['vencimentos', 'descontos', 'quantidade']);
+    return Object.keys(tabs).length > 0 ? tabs : null;
+  }, [data.months]);
+
+  const hasTabData = liveTabs !== null;
   const availableTabs = useMemo(() => 
-    hasTabData ? (Object.keys(data.tabs!) as TabType[]) : [],
-    [hasTabData, data.tabs]
+    hasTabData ? (Object.keys(liveTabs!) as TabType[]) : [],
+    [hasTabData, liveTabs]
   );
 
   // Tab selection state
