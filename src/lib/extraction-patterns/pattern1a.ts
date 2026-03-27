@@ -1636,11 +1636,55 @@ const extractAllFields = (
     /^Dep\.?\s*IR$/i, /^Dep\.?\s*SF$/i, /^Dep\.?\s*IRRF$/i, /^Dep\.?\s*Sal\.?\s*Fam[ií]lia$/i,
     /^CTPS$/i, /^Hor[aá]rio$/i, /^Sequ[eê]ncia$/i, /^Refer[eê]ncia$/i,
     /^Trabalhador$/i, /^Mensagem$/i, /^Conta$/i, /^D[ií]gito$/i,
+    /^CBO$/i, /^M[eêÊ]S\s*\/?\s*ANO$/i, /^M[eêÊ]SANO$/i, /^Data\s*Admiss[aã]o$/i,
+    /^Data\s+de\s+Admiss[aã]o$/i,
   ];
 
   const isTextValueLabel = (s: string): boolean => {
     const t = s.trim();
     return TEXT_VALUE_LABELS.some(p => p.test(t));
+  };
+
+  /**
+   * Check if a line is a "label row" — contains mostly known labels with no interleaved values.
+   * Returns the detected labels with their X positions.
+   */
+  const detectLabelRow = (line: LayoutLine): { label: string; x: number; rightEdge: number }[] => {
+    const labels: { label: string; x: number; rightEdge: number }[] = [];
+    const lineItems = line.items;
+    
+    for (let j = 0; j < lineItems.length; j++) {
+      const str = lineItems[j].str.trim();
+      if (!str) continue;
+      
+      // Try single item
+      if (isTextValueLabel(str) || KNOWN_LABELS.test(str)) {
+        labels.push({ label: str, x: lineItems[j].x, rightEdge: lineItems[j].x + lineItems[j].width });
+        continue;
+      }
+      
+      // Try multi-word combinations (2-4 items)
+      let found = false;
+      for (let len = 2; len <= Math.min(4, lineItems.length - j); len++) {
+        const combined = lineItems.slice(j, j + len).map(it => it.str.trim()).filter(Boolean).join(' ');
+        if (isTextValueLabel(combined)) {
+          const lastItem = lineItems[j + len - 1];
+          labels.push({ label: combined, x: lineItems[j].x, rightEdge: lastItem.x + lastItem.width });
+          j += len - 1; // skip consumed items
+          found = true;
+          break;
+        }
+      }
+      if (found) continue;
+      
+      // If it's a pure value (number/date) interleaved, this is NOT a pure label row
+      if (isDataValue(str)) {
+        // Allow one or two data values mixed in (e.g., "MÊSANO 11 / 2024" where 11 is a value)
+        continue;
+      }
+    }
+    
+    return labels;
   };
 
   for (let i = 0; i < lines.length; i++) {
