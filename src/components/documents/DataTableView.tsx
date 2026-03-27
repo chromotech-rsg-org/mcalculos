@@ -98,9 +98,9 @@ const DataTableView: React.FC<DataTableViewProps> = ({ data }) => {
 
   // New tab-based data
   const availableTabs = useMemo(() => {
-    if (!hasTabData) return [];
-    return Object.keys(data.tabs || {});
-  }, [hasTabData, data.tabs]);
+    if (!liveTabs) return [];
+    return Object.keys(liveTabs);
+  }, [liveTabs]);
   
   // Set default active tab
   useEffect(() => {
