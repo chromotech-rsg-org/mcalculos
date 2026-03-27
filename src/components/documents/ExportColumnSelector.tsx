@@ -170,7 +170,7 @@ const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpe
                       </span>
                       <div className="flex gap-1">
                         <Button variant="ghost" size="sm" className="h-6 text-xs"
-                          onClick={() => setSelectedColumnsByTab(prev => ({ ...prev, [tab]: data.tabs![tab]?.columns || [] }))}>
+                          onClick={() => setSelectedColumnsByTab(prev => ({ ...prev, [tab]: liveTabs![tab]?.columns || [] }))}>
                           Todas
                         </Button>
                         <Button variant="ghost" size="sm" className="h-6 text-xs"
