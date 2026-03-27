@@ -2,6 +2,13 @@ import * as XLSX from 'xlsx';
 import { ExtractedData, PayslipEvent, TabData } from '@/types';
 import { buildTabsFromMonths } from '@/lib/build-tabs';
 
+const getSheetName = (tabType: string): string => {
+  if (tabType === 'vencimentos') return 'Vencimentos';
+  if (tabType === 'descontos') return 'Descontos';
+  if (tabType === 'quantidade') return 'QTDE';
+  return 'Dados';
+};
+
 /** Rebuild tabs from months data to reflect user edits (deletions, changes) */
 const rebuildLiveTabs = (data: ExtractedData): Record<string, TabData> | null => {
   if (!data.months || data.months.length === 0) return null;
@@ -9,6 +16,45 @@ const rebuildLiveTabs = (data: ExtractedData): Record<string, TabData> | null =>
   if (!hasEvents) return null;
   const tabs = buildTabsFromMonths(data.months, ['vencimentos', 'descontos', 'quantidade']);
   return Object.keys(tabs).length > 0 ? tabs : null;
+};
+
+/**
+ * Resolve tabs to export.
+ * Priority: explicit data.tabs (coming from selector) > rebuilt tabs from months.
+ */
+const getTabsToExport = (data: ExtractedData): Array<[string, TabData]> => {
+  const explicitTabs = data.tabs
+    ? Object.entries(data.tabs).filter((entry): entry is [string, TabData] => {
+        const tabData = entry[1];
+        return Boolean(tabData && Array.isArray(tabData.columns) && Array.isArray(tabData.rows));
+      })
+    : [];
+
+  if (explicitTabs.length > 0) return explicitTabs;
+
+  const liveTabs = rebuildLiveTabs(data);
+  if (!liveTabs) return [];
+  return Object.entries(liveTabs);
+};
+
+const buildCsvContent = (headers: string[], rows: Record<string, string>[]): string => {
+  const csvRows: string[][] = [headers];
+  rows.forEach(row => {
+    csvRows.push(headers.map(h => row[h] || ''));
+  });
+
+  return csvRows
+    .map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
+    .join('\n');
+};
+
+const downloadCsv = (filename: string, csvContent: string): void => {
+  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
+  const link = document.createElement('a');
+  link.href = URL.createObjectURL(blob);
+  link.download = `${filename}.csv`;
+  link.click();
+  URL.revokeObjectURL(link.href);
 };
 
 /**
@@ -97,19 +143,19 @@ const getOrderedHeaders = (fieldKeys: string[], maxEvents: number): string[] => 
 };
 
 export const exportToExcel = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
-  // Always rebuild tabs from months to reflect user edits
-  const liveTabs = rebuildLiveTabs(data);
-  
-  if (liveTabs && Object.keys(liveTabs).length > 0) {
+  const tabEntries = getTabsToExport(data);
+
+  if (tabEntries.length > 0) {
     const workbook = XLSX.utils.book_new();
-    
+
     // Create a worksheet for each tab
-    Object.entries(liveTabs).forEach(([tabType, tabData]) => {
+    tabEntries.forEach(([tabType, tabData]) => {
       if (!tabData) return;
-      
+
       const headers = selectedColumns ? 
         tabData.columns.filter(h => selectedColumns.includes(h)) : 
         tabData.columns;
+      if (headers.length === 0) return;
       
       const filteredRows = tabData.rows.map(row => {
         const filtered: Record<string, string> = {};
@@ -119,11 +165,13 @@ export const exportToExcel = (data: ExtractedData, filename: string, selectedCol
       
       const worksheet = XLSX.utils.json_to_sheet(filteredRows, { header: headers });
       worksheet['!cols'] = headers.map(h => ({ wch: Math.min(Math.max(h.length + 2, 12), 40) }));
-      
-      const sheetName = tabType === 'vencimentos' ? 'Vencimentos' : 
-                       tabType === 'descontos' ? 'Descontos' : 'QTDE';
-      XLSX.utils.book_append_sheet(workbook, worksheet, sheetName);
+
+      XLSX.utils.book_append_sheet(workbook, worksheet, getSheetName(tabType));
     });
+
+    if (workbook.SheetNames.length === 0) {
+      XLSX.utils.book_append_sheet(workbook, XLSX.utils.aoa_to_sheet([]), 'Dados');
+    }
     
     XLSX.writeFile(workbook, `${filename}.xlsx`);
     return;
@@ -151,32 +199,31 @@ export const exportToExcel = (data: ExtractedData, filename: string, selectedCol
 };
 
 export const exportToCSV = (data: ExtractedData, filename: string, selectedColumns?: string[]): void => {
-  // Always rebuild tabs from months to reflect user edits
-  const liveTabs = rebuildLiveTabs(data);
-  
-  if (liveTabs && Object.keys(liveTabs).length > 0) {
-    const firstTabData = Object.values(liveTabs)[0];
-    if (!firstTabData) return;
-    
-    const headers = selectedColumns ? 
-      firstTabData.columns.filter(h => selectedColumns.includes(h)) : 
-      firstTabData.columns;
+  const tabEntries = getTabsToExport(data);
 
-    const csvRows: string[][] = [headers];
-    firstTabData.rows.forEach(row => {
-      csvRows.push(headers.map(h => row[h] || ''));
+  if (tabEntries.length > 0) {
+    let exportedCount = 0;
+
+    tabEntries.forEach(([tabType, tabData]) => {
+      const headers = selectedColumns
+        ? tabData.columns.filter(h => selectedColumns.includes(h))
+        : tabData.columns;
+
+      if (headers.length === 0) return;
+
+      const csvContent = buildCsvContent(headers, tabData.rows);
+      const csvFilename = tabEntries.length > 1
+        ? `${filename}_${getSheetName(tabType)}`
+        : filename;
+
+      downloadCsv(csvFilename, csvContent);
+      exportedCount += 1;
     });
 
-    const csvContent = csvRows
-      .map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
-      .join('\n');
+    if (exportedCount === 0) {
+      downloadCsv(filename, '');
+    }
 
-    const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = `${filename}.csv`;
-    link.click();
-    URL.revokeObjectURL(link.href);
     return;
   }
   
@@ -187,21 +234,8 @@ export const exportToCSV = (data: ExtractedData, filename: string, selectedColum
   const allHeaders = getOrderedHeaders(fieldKeys, maxEvents);
   const headers = selectedColumns ? allHeaders.filter(h => selectedColumns.includes(h)) : allHeaders;
 
-  const csvRows: string[][] = [headers];
-  rows.forEach(row => {
-    csvRows.push(headers.map(h => row[h] || ''));
-  });
-
-  const csvContent = csvRows
-    .map(row => row.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(','))
-    .join('\n');
-
-  const blob = new Blob(['\ufeff' + csvContent], { type: 'text/csv;charset=utf-8;' });
-  const link = document.createElement('a');
-  link.href = URL.createObjectURL(blob);
-  link.download = `${filename}.csv`;
-  link.click();
-  URL.revokeObjectURL(link.href);
+  const csvContent = buildCsvContent(headers, rows);
+  downloadCsv(filename, csvContent);
 };
 
 /** Collect all available columns (field keys + event columns) for column selector */
