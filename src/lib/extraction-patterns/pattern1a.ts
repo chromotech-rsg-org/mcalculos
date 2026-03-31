@@ -1508,7 +1508,7 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
           const label = items[j].str.trim();
           const labelX = items[j].x;
           
-          if (/^Banco$/i.test(label) && !result.banco) {
+          if (/^(Banco|BCO)$/i.test(label) && !result.banco) {
             for (const ni of nextItems) {
               if (Math.abs(ni.x - labelX) < 100 && ni.str.trim().length > 0) {
                 result.banco = ni.str.trim();
@@ -1516,7 +1516,7 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
               }
             }
           }
-          if (/^Ag[eê]ncia$/i.test(label) && !result.agencia) {
+          if (/^(Ag[eê]ncia|AG)$/i.test(label) && !result.agencia) {
             for (const ni of nextItems) {
               if (Math.abs(ni.x - labelX) < 100 && /[\d-]+/.test(ni.str.trim())) {
                 result.agencia = ni.str.trim();
@@ -1524,7 +1524,7 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
               }
             }
           }
-          if (/^(C\/C|Conta)$/i.test(label) && !result.contaCorrente) {
+          if (/^(C\/C|Conta|CONTA)$/i.test(label) && !result.contaCorrente) {
             for (const ni of nextItems) {
               if (Math.abs(ni.x - labelX) < 100 && /[\d.-]+/.test(ni.str.trim())) {
                 result.contaCorrente = ni.str.trim();
