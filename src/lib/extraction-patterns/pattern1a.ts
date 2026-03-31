@@ -1053,9 +1053,9 @@ const parseEventLineByItems = (
  * Pattern: code(3-4 digits) + description(text) + 1-3 monetary values at the end.
  */
 const parseEventLineByTextFallback = (text: string): PayslipEvent | null => {
+  // Strip pipe characters that appear in some PDF formats (ADP/Indra)
+  const trimmed = text.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
   // Match: code at start (with optional leading whitespace), then description, then monetary values at end
-  // Description can contain special chars: parentheses, /, %, c/, 1/3, dots
-  const trimmed = text.trim();
   const match = trimmed.match(/^(\d{3,4})\s+(.+?)(?:\s+([\d.,]+(?:\s+[\d.,]+){0,2}))\s*$/);
   if (!match) {
     // Try matching lines with only code + description + single value (no ref)
