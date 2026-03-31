@@ -442,7 +442,8 @@ const extractEmployee = (lines: LayoutLine[]): {
       (/Evento/i.test(text) && /Discrimina[cç][aã]o/i.test(text)) ||
       (/Evento/i.test(text) && /Proventos/i.test(text)) ||
       (/\bVerba\b/i.test(text) && /Descri[cç][aã]o/i.test(text)) ||
-      (/\bVerba\b/i.test(text) && /Vencimento(?:s)?/i.test(text))
+      (/\bVerba\b/i.test(text) && /Vencimento(?:s)?/i.test(text)) ||
+      (/\bCONTA\b/i.test(text) && /Vencimento(?:s)?/i.test(text) && /Desconto(?:s)?/i.test(text))
     ) {
       tableHeaderIdx = i;
       break;
