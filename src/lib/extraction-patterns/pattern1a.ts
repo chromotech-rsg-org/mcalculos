@@ -934,12 +934,25 @@ const parseEventLineByItems = (
   const numericItems: TextItem[] = [];
   let passedCode = false;
   
+  // If code was merged with description, pre-populate descItems
+  if (mergedDescFromCode) {
+    descItems.push(mergedDescFromCode);
+    passedCode = true; // Skip past the merged item
+  }
+  
   for (const item of line.items) {
-    if (item === eventCodeItem) { passedCode = true; continue; }
-    if (!passedCode) continue;
+    if (!passedCode) {
+      // For merged items, skip the item that contained code+desc
+      if (mergedDescFromCode && item.str.trim().startsWith(codigo)) {
+        passedCode = true;
+        continue;
+      }
+      if (item === eventCodeItem) { passedCode = true; continue; }
+      continue;
+    }
     
     const val = item.str.trim();
-    if (!val) continue;
+    if (!val || val === '|') continue; // Skip pipe separators
     
     if (/^[\d.,]+$/.test(val) && val.length >= 2) {
       numericItems.push(item);
@@ -948,6 +961,8 @@ const parseEventLineByItems = (
       if (descX !== null && itemCenterX > descX + 50) continue;
       // Skip period fragments
       if (/^[\d/\s]+$/.test(val) && val.length <= 4) continue;
+      // Skip dash separators
+      if (/^-{2,}$/.test(val)) continue;
       descItems.push(val);
     } else {
       if (/^[\d.,]+$/.test(val)) numericItems.push(item);
