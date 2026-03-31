@@ -897,22 +897,33 @@ const parseEventLineByItems = (
 ): PayslipEvent | null => {
   // Find event code - skip date components (year preceded by "/" from Mês/Ano column)
   let eventCodeItem: TextItem | undefined;
+  let mergedDescFromCode = ''; // Description merged with code in same item (e.g., "0010 Salário Base")
   for (let j = 0; j < line.items.length; j++) {
     const it = line.items[j];
-    if (!/^\d{3,4}$/.test(it.str.trim())) continue;
-    // Skip if this item is a YEAR directly preceded by "/" (the item right before it is "/")
-    // Only skip when the item immediately after "/" is THIS item (not separated by other items)
-    let isYear = false;
-    if (j >= 1 && line.items[j - 1].str.trim() === '/') {
-      // "/" is right before this number → it's a year like "/2020"
-      isYear = true;
-    } else if (j >= 2 && line.items[j - 1].str.trim() === '' && line.items[j - 2].str.trim() === '/') {
-      // "/" then empty then this number
-      isYear = true;
+    const trimmed = it.str.trim();
+    
+    // Exact match: standalone code item
+    if (/^\d{3,4}$/.test(trimmed)) {
+      // Skip if this item is a YEAR directly preceded by "/"
+      let isYear = false;
+      if (j >= 1 && line.items[j - 1].str.trim() === '/') {
+        isYear = true;
+      } else if (j >= 2 && line.items[j - 1].str.trim() === '' && line.items[j - 2].str.trim() === '/') {
+        isYear = true;
+      }
+      if (isYear) continue;
+      eventCodeItem = it;
+      break;
     }
-    if (isYear) continue;
-    eventCodeItem = it;
-    break;
+    
+    // Merged match: code + description in same item (e.g., "0010 Salário Base")
+    const mergedMatch = trimmed.match(/^(\d{3,4})\s+(.+)/);
+    if (mergedMatch) {
+      // Create a virtual TextItem for the code
+      eventCodeItem = { ...it, str: mergedMatch[1] };
+      mergedDescFromCode = mergedMatch[2].trim();
+      break;
+    }
   }
   if (!eventCodeItem) return null;
   
@@ -923,12 +934,25 @@ const parseEventLineByItems = (
   const numericItems: TextItem[] = [];
   let passedCode = false;
   
+  // If code was merged with description, pre-populate descItems
+  if (mergedDescFromCode) {
+    descItems.push(mergedDescFromCode);
+    passedCode = true; // Skip past the merged item
+  }
+  
   for (const item of line.items) {
-    if (item === eventCodeItem) { passedCode = true; continue; }
-    if (!passedCode) continue;
+    if (!passedCode) {
+      // For merged items, skip the item that contained code+desc
+      if (mergedDescFromCode && item.str.trim().startsWith(codigo)) {
+        passedCode = true;
+        continue;
+      }
+      if (item === eventCodeItem) { passedCode = true; continue; }
+      continue;
+    }
     
     const val = item.str.trim();
-    if (!val) continue;
+    if (!val || val === '|') continue; // Skip pipe separators
     
     if (/^[\d.,]+$/.test(val) && val.length >= 2) {
       numericItems.push(item);
@@ -937,6 +961,8 @@ const parseEventLineByItems = (
       if (descX !== null && itemCenterX > descX + 50) continue;
       // Skip period fragments
       if (/^[\d/\s]+$/.test(val) && val.length <= 4) continue;
+      // Skip dash separators
+      if (/^-{2,}$/.test(val)) continue;
       descItems.push(val);
     } else {
       if (/^[\d.,]+$/.test(val)) numericItems.push(item);
@@ -1027,9 +1053,9 @@ const parseEventLineByItems = (
  * Pattern: code(3-4 digits) + description(text) + 1-3 monetary values at the end.
  */
 const parseEventLineByTextFallback = (text: string): PayslipEvent | null => {
+  // Strip pipe characters that appear in some PDF formats (ADP/Indra)
+  const trimmed = text.replace(/\|/g, ' ').replace(/\s+/g, ' ').trim();
   // Match: code at start (with optional leading whitespace), then description, then monetary values at end
-  // Description can contain special chars: parentheses, /, %, c/, 1/3, dots
-  const trimmed = text.trim();
   const match = trimmed.match(/^(\d{3,4})\s+(.+?)(?:\s+([\d.,]+(?:\s+[\d.,]+){0,2}))\s*$/);
   if (!match) {
     // Try matching lines with only code + description + single value (no ref)
@@ -1173,9 +1199,9 @@ const extractEvents = (lines: LayoutLine[]): {
     if (/Fls\.?\s*:/i.test(text)) break;
     if (/^Resumo$/i.test(text.trim())) break;
     if (/Processado\s+pela/i.test(text)) break;
-    if (/Parab[eé]ns/i.test(text)) continue; // Skip birthday messages inside events
-    // Skip BASE/OUTROS separator lines (dashes)
-    if (/BASE\s*\/\s*OUTROS/i.test(text) || /^-{4,}/.test(text.trim())) continue;
+    // Stop at BASE/OUTROS separator (items after are footer/base data, not events)
+    if (/BASE\s*\/\s*OUTROS/i.test(text)) break;
+    if (/^-{4,}\s*-{4,}/.test(text.trim())) continue; // Skip pure dash separator lines
     
     // Try to extract period from "Mês/Ano" column (e.g. "8 / 2020" or "03 / 2019")
     if (!period) {
