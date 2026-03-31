@@ -294,6 +294,17 @@ const extractHeader = (lines: LayoutLine[]): {
         }
       }
       
+      // "REFERÊNCIA OUT/2017" or "Referência SET/2017" - abbreviated month with slash
+      if (!result.period) {
+        const abbrMonthMatch = text.match(/(?:Refer[eê]ncia|Compet[eê]ncia|REFER[EÊ]NCIA)[:\s]*(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s*\/\s*(\d{4})/i);
+        if (abbrMonthMatch) {
+          const monthKey = abbrMonthMatch[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const monthNum = MONTH_NAMES[monthKey] || '??';
+          result.competencia = `${monthNum}/${abbrMonthMatch[2]}`;
+          result.period = `${monthNum}/${abbrMonthMatch[2]}`;
+        }
+      }
+      
       // "01/2024" or "Competência: 01/2024" or "Referência: 08/2023" format
       if (!result.period) {
         const numCompMatch = text.match(/(?:Compet[eê]ncia|Per[ií]odo|Refer[eê]ncia)[:\s]*(\d{1,2})\s*\/\s*(\d{4})/i);
