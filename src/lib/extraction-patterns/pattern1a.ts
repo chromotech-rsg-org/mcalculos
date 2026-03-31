@@ -12,6 +12,9 @@ const MONTH_NAMES: Record<string, string> = {
   'abril': '04', 'maio': '05', 'junho': '06',
   'julho': '07', 'agosto': '08', 'setembro': '09',
   'outubro': '10', 'novembro': '11', 'dezembro': '12',
+  // Abbreviated month names
+  'jan': '01', 'fev': '02', 'mar': '03', 'abr': '04', 'mai': '05', 'jun': '06',
+  'jul': '07', 'ago': '08', 'set': '09', 'out': '10', 'nov': '11', 'dez': '12',
 };
 
 const MONTH_LABELS: Record<string, string> = {
