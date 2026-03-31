@@ -1474,24 +1474,24 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
       for (let j = 0; j < items.length; j++) {
         const label = items[j].str.trim();
         
-        if (/^Banco$/i.test(label) && !result.banco) {
+        if (/^(Banco|BCO)$/i.test(label) && !result.banco) {
           // Next item on same line is value
           if (j + 1 < items.length) {
             const nextVal = items[j + 1].str.trim();
-            if (nextVal && !/^(Ag[eê]ncia|C\/C|Conta|Local)$/i.test(nextVal)) {
+            if (nextVal && !/^(Ag[eê]ncia|AG|C\/C|Conta|CONTA|Local)$/i.test(nextVal)) {
               result.banco = nextVal;
             }
           }
         }
-        if (/^Ag[eê]ncia$/i.test(label) && !result.agencia) {
+        if (/^(Ag[eê]ncia|AG)$/i.test(label) && !result.agencia) {
           if (j + 1 < items.length) {
             const nextVal = items[j + 1].str.trim();
-            if (nextVal && !/^(C\/C|Conta|Banco)$/i.test(nextVal) && /[\d]/.test(nextVal)) {
+            if (nextVal && !/^(C\/C|Conta|CONTA|Banco|BCO)$/i.test(nextVal) && /[\d]/.test(nextVal)) {
               result.agencia = nextVal;
             }
           }
         }
-        if (/^(C\/C|Conta)$/i.test(label) && !result.contaCorrente) {
+        if (/^(C\/C|Conta|CONTA)$/i.test(label) && !result.contaCorrente) {
           if (j + 1 < items.length) {
             const nextVal = items[j + 1].str.trim();
             if (nextVal && /[\d]/.test(nextVal)) {
