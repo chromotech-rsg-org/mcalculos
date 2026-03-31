@@ -897,22 +897,33 @@ const parseEventLineByItems = (
 ): PayslipEvent | null => {
   // Find event code - skip date components (year preceded by "/" from Mês/Ano column)
   let eventCodeItem: TextItem | undefined;
+  let mergedDescFromCode = ''; // Description merged with code in same item (e.g., "0010 Salário Base")
   for (let j = 0; j < line.items.length; j++) {
     const it = line.items[j];
-    if (!/^\d{3,4}$/.test(it.str.trim())) continue;
-    // Skip if this item is a YEAR directly preceded by "/" (the item right before it is "/")
-    // Only skip when the item immediately after "/" is THIS item (not separated by other items)
-    let isYear = false;
-    if (j >= 1 && line.items[j - 1].str.trim() === '/') {
-      // "/" is right before this number → it's a year like "/2020"
-      isYear = true;
-    } else if (j >= 2 && line.items[j - 1].str.trim() === '' && line.items[j - 2].str.trim() === '/') {
-      // "/" then empty then this number
-      isYear = true;
+    const trimmed = it.str.trim();
+    
+    // Exact match: standalone code item
+    if (/^\d{3,4}$/.test(trimmed)) {
+      // Skip if this item is a YEAR directly preceded by "/"
+      let isYear = false;
+      if (j >= 1 && line.items[j - 1].str.trim() === '/') {
+        isYear = true;
+      } else if (j >= 2 && line.items[j - 1].str.trim() === '' && line.items[j - 2].str.trim() === '/') {
+        isYear = true;
+      }
+      if (isYear) continue;
+      eventCodeItem = it;
+      break;
     }
-    if (isYear) continue;
-    eventCodeItem = it;
-    break;
+    
+    // Merged match: code + description in same item (e.g., "0010 Salário Base")
+    const mergedMatch = trimmed.match(/^(\d{3,4})\s+(.+)/);
+    if (mergedMatch) {
+      // Create a virtual TextItem for the code
+      eventCodeItem = { ...it, str: mergedMatch[1] };
+      mergedDescFromCode = mergedMatch[2].trim();
+      break;
+    }
   }
   if (!eventCodeItem) return null;
   
