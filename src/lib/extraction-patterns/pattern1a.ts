@@ -1131,6 +1131,25 @@ const extractEvents = (lines: LayoutLine[]): {
       continue;
     }
     
+    // ADP/Indra format: "VENCIMENTOS DESCONTOS LÍQUIDO" header followed by "T O T A I S" then values
+    if (/VENCIMENTOS\s+DESCONTOS\s+L[IÍ]QUIDO/i.test(text)) {
+      // Look at next lines for "T O T A I S" and values
+      for (let k = i + 1; k < Math.min(i + 4, lines.length); k++) {
+        const kText = lines[k].text;
+        // Line with numeric values (totals)
+        const totalsValues = lines[k].items
+          .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+          .sort((a, b) => a.x - b.x);
+        if (totalsValues.length >= 2 && !/T\s*O\s*T\s*A\s*I\s*S/i.test(kText)) {
+          if (!totalVencimentos && totalsValues[0]) totalVencimentos = totalsValues[0].str.trim();
+          if (!totalDescontos && totalsValues[1]) totalDescontos = totalsValues[1].str.trim();
+          if (!valorLiquido && totalsValues[2]) valorLiquido = totalsValues[2].str.trim();
+          break;
+        }
+      }
+      break; // Stop processing events
+    }
+    
     // Stop at footer/resume labels
     if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !/Evento|Discrimina|Descri/i.test(text)) break;
     if (/Sal\.\s*Contr/i.test(text)) break;
@@ -1141,7 +1160,10 @@ const extractEvents = (lines: LayoutLine[]): {
     if (/Assinado\s+eletronicamente/i.test(text)) break;
     if (/Fls\.?\s*:/i.test(text)) break;
     if (/^Resumo$/i.test(text.trim())) break;
+    if (/Processado\s+pela/i.test(text)) break;
     if (/Parab[eé]ns/i.test(text)) continue; // Skip birthday messages inside events
+    // Skip BASE/OUTROS separator lines (dashes)
+    if (/BASE\s*\/\s*OUTROS/i.test(text) || /^-{4,}/.test(text.trim())) continue;
     
     // Try to extract period from "Mês/Ano" column (e.g. "8 / 2020" or "03 / 2019")
     if (!period) {
