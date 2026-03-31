@@ -1199,9 +1199,9 @@ const extractEvents = (lines: LayoutLine[]): {
     if (/Fls\.?\s*:/i.test(text)) break;
     if (/^Resumo$/i.test(text.trim())) break;
     if (/Processado\s+pela/i.test(text)) break;
-    if (/Parab[eé]ns/i.test(text)) continue; // Skip birthday messages inside events
-    // Skip BASE/OUTROS separator lines (dashes)
-    if (/BASE\s*\/\s*OUTROS/i.test(text) || /^-{4,}/.test(text.trim())) continue;
+    // Stop at BASE/OUTROS separator (items after are footer/base data, not events)
+    if (/BASE\s*\/\s*OUTROS/i.test(text)) break;
+    if (/^-{4,}\s*-{4,}/.test(text.trim())) continue; // Skip pure dash separator lines
     
     // Try to extract period from "Mês/Ano" column (e.g. "8 / 2020" or "03 / 2019")
     if (!period) {
