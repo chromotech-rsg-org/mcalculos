@@ -1465,9 +1465,9 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
     
     // Strategy 1: Labels on one line, values on same line after label (e.g. "Banco  033  Agência  82  C/C  00071...")
     // or labels on one line and values on next line
-    const hasBancoLabel = items.some(it => /^Banco$/i.test(it.str.trim()));
-    const hasAgLabel = items.some(it => /^Ag[eê]ncia$/i.test(it.str.trim()));
-    const hasCCLabel = items.some(it => /^(C\/C|Conta)$/i.test(it.str.trim()));
+    const hasBancoLabel = items.some(it => /^(Banco|BCO)$/i.test(it.str.trim()));
+    const hasAgLabel = items.some(it => /^(Ag[eê]ncia|AG)$/i.test(it.str.trim()));
+    const hasCCLabel = items.some(it => /^(C\/C|Conta|CONTA)$/i.test(it.str.trim()));
     
     if (hasBancoLabel || hasAgLabel || hasCCLabel) {
       // Collect label-value pairs from items on this line
