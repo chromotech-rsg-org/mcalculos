@@ -805,6 +805,9 @@ const detectEventHeader = (lines: LayoutLine[]): {
     // Layout E: "Verba" + "Descrição" + "Vencimento" (SBB format)
     const hasVerba = /\bVerba\b/i.test(text);
     
+    // Layout F: "CONTA" + "VENCIMENTOS" + "DESCONTOS" (ADP/Indra format)
+    const hasConta = /\bCONTA\b/i.test(text);
+    
     const isHeader = 
       (hasCodigo && hasDescricao && hasVenc) ||
       (hasEvento && hasDiscriminacao && hasVenc) ||
@@ -813,7 +816,8 @@ const detectEventHeader = (lines: LayoutLine[]): {
       (hasCodigo && hasDescontos) ||
       (hasEvento && hasVenc) ||
       (hasVerba && hasDescricao && hasVenc) ||
-      (hasVerba && hasDescontos);
+      (hasVerba && hasDescontos) ||
+      (hasConta && hasVenc && hasDescontos);
     
     if (isHeader) {
       let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Vencimento') || findColumnX(lines[i], 'Proventos') || findColumnX(lines[i], 'Provento');
