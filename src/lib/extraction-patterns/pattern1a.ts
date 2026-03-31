@@ -379,6 +379,17 @@ const extractHeader = (lines: LayoutLine[]): {
         }
       }
       
+      // Standalone abbreviated month/year (e.g., "OUT/2017", "SET/2017" without label)
+      if (!result.period) {
+        const abbrStandalone = text.match(/\b(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s*\/\s*(\d{4})\b/i);
+        if (abbrStandalone) {
+          const monthKey = abbrStandalone[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const monthNum = MONTH_NAMES[monthKey] || '??';
+          result.competencia = `${monthNum}/${abbrStandalone[2]}`;
+          result.period = `${monthNum}/${abbrStandalone[2]}`;
+        }
+      }
+      
       // Standalone MM/YYYY in header (with optional spaces: "03 / 2019" or "03/2019")
       // But avoid capturing dates from judicial protocol headers (first line)
       // Also skip dates that look like admission dates (DD/MM/YYYY where DD > 12)
