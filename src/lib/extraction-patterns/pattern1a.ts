@@ -12,6 +12,9 @@ const MONTH_NAMES: Record<string, string> = {
   'abril': '04', 'maio': '05', 'junho': '06',
   'julho': '07', 'agosto': '08', 'setembro': '09',
   'outubro': '10', 'novembro': '11', 'dezembro': '12',
+  // Abbreviated month names
+  'jan': '01', 'fev': '02', 'mar': '03', 'abr': '04', 'mai': '05', 'jun': '06',
+  'jul': '07', 'ago': '08', 'set': '09', 'out': '10', 'nov': '11', 'dez': '12',
 };
 
 const MONTH_LABELS: Record<string, string> = {
@@ -291,6 +294,17 @@ const extractHeader = (lines: LayoutLine[]): {
         }
       }
       
+      // "REFERÊNCIA OUT/2017" or "Referência SET/2017" - abbreviated month with slash
+      if (!result.period) {
+        const abbrMonthMatch = text.match(/(?:Refer[eê]ncia|Compet[eê]ncia|REFER[EÊ]NCIA)[:\s]*(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s*\/\s*(\d{4})/i);
+        if (abbrMonthMatch) {
+          const monthKey = abbrMonthMatch[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const monthNum = MONTH_NAMES[monthKey] || '??';
+          result.competencia = `${monthNum}/${abbrMonthMatch[2]}`;
+          result.period = `${monthNum}/${abbrMonthMatch[2]}`;
+        }
+      }
+      
       // "01/2024" or "Competência: 01/2024" or "Referência: 08/2023" format
       if (!result.period) {
         const numCompMatch = text.match(/(?:Compet[eê]ncia|Per[ií]odo|Refer[eê]ncia)[:\s]*(\d{1,2})\s*\/\s*(\d{4})/i);
@@ -365,6 +379,17 @@ const extractHeader = (lines: LayoutLine[]): {
         }
       }
       
+      // Standalone abbreviated month/year (e.g., "OUT/2017", "SET/2017" without label)
+      if (!result.period) {
+        const abbrStandalone = text.match(/\b(JAN|FEV|MAR|ABR|MAI|JUN|JUL|AGO|SET|OUT|NOV|DEZ)\s*\/\s*(\d{4})\b/i);
+        if (abbrStandalone) {
+          const monthKey = abbrStandalone[1].toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+          const monthNum = MONTH_NAMES[monthKey] || '??';
+          result.competencia = `${monthNum}/${abbrStandalone[2]}`;
+          result.period = `${monthNum}/${abbrStandalone[2]}`;
+        }
+      }
+      
       // Standalone MM/YYYY in header (with optional spaces: "03 / 2019" or "03/2019")
       // But avoid capturing dates from judicial protocol headers (first line)
       // Also skip dates that look like admission dates (DD/MM/YYYY where DD > 12)
@@ -417,7 +442,8 @@ const extractEmployee = (lines: LayoutLine[]): {
       (/Evento/i.test(text) && /Discrimina[cç][aã]o/i.test(text)) ||
       (/Evento/i.test(text) && /Proventos/i.test(text)) ||
       (/\bVerba\b/i.test(text) && /Descri[cç][aã]o/i.test(text)) ||
-      (/\bVerba\b/i.test(text) && /Vencimento(?:s)?/i.test(text))
+      (/\bVerba\b/i.test(text) && /Vencimento(?:s)?/i.test(text)) ||
+      (/\bCONTA\b/i.test(text) && /Vencimento(?:s)?/i.test(text) && /Desconto(?:s)?/i.test(text))
     ) {
       tableHeaderIdx = i;
       break;
@@ -805,6 +831,9 @@ const detectEventHeader = (lines: LayoutLine[]): {
     // Layout E: "Verba" + "Descrição" + "Vencimento" (SBB format)
     const hasVerba = /\bVerba\b/i.test(text);
     
+    // Layout F: "CONTA" + "VENCIMENTOS" + "DESCONTOS" (ADP/Indra format)
+    const hasConta = /\bCONTA\b/i.test(text);
+    
     const isHeader = 
       (hasCodigo && hasDescricao && hasVenc) ||
       (hasEvento && hasDiscriminacao && hasVenc) ||
@@ -813,12 +842,13 @@ const detectEventHeader = (lines: LayoutLine[]): {
       (hasCodigo && hasDescontos) ||
       (hasEvento && hasVenc) ||
       (hasVerba && hasDescricao && hasVenc) ||
-      (hasVerba && hasDescontos);
+      (hasVerba && hasDescontos) ||
+      (hasConta && hasVenc && hasDescontos);
     
     if (isHeader) {
       let vencX = findColumnX(lines[i], 'Vencimentos') || findColumnX(lines[i], 'Vencimento') || findColumnX(lines[i], 'Proventos') || findColumnX(lines[i], 'Provento');
       let descX = findColumnX(lines[i], 'Descontos') || findColumnX(lines[i], 'Desconto');
-      const refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref') || findColumnX(lines[i], 'Qtde');
+      const refX = findColumnX(lines[i], 'Refer') || findColumnX(lines[i], 'Ref') || findColumnX(lines[i], 'Qtde') || findColumnX(lines[i], 'QTDE');
       
       // If DESCONTOS not on the header line, search nearby lines (±3)
       if (descX === null) {
@@ -1113,8 +1143,27 @@ const extractEvents = (lines: LayoutLine[]): {
       continue;
     }
     
+    // ADP/Indra format: "VENCIMENTOS DESCONTOS LÍQUIDO" header followed by "T O T A I S" then values
+    if (/VENCIMENTOS\s+DESCONTOS\s+L[IÍ]QUIDO/i.test(text)) {
+      // Look at next lines for "T O T A I S" and values
+      for (let k = i + 1; k < Math.min(i + 4, lines.length); k++) {
+        const kText = lines[k].text;
+        // Line with numeric values (totals)
+        const totalsValues = lines[k].items
+          .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+          .sort((a, b) => a.x - b.x);
+        if (totalsValues.length >= 2 && !/T\s*O\s*T\s*A\s*I\s*S/i.test(kText)) {
+          if (!totalVencimentos && totalsValues[0]) totalVencimentos = totalsValues[0].str.trim();
+          if (!totalDescontos && totalsValues[1]) totalDescontos = totalsValues[1].str.trim();
+          if (!valorLiquido && totalsValues[2]) valorLiquido = totalsValues[2].str.trim();
+          break;
+        }
+      }
+      break; // Stop processing events
+    }
+    
     // Stop at footer/resume labels
-    if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !/Evento|Discrimina|Descri/i.test(text)) break;
+    if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !/Evento|Discrimina|Descri/i.test(text) && !/^\s*\d{3,4}\s/.test(text)) break;
     if (/Sal\.\s*Contr/i.test(text)) break;
     if (/SAL[AÁ]RIO\s+CONTR/i.test(text)) break;
     if (/Base\s+(?:para\s+|C[aá]lc\.?\s*)?FGTS/i.test(text)) break;
@@ -1123,7 +1172,10 @@ const extractEvents = (lines: LayoutLine[]): {
     if (/Assinado\s+eletronicamente/i.test(text)) break;
     if (/Fls\.?\s*:/i.test(text)) break;
     if (/^Resumo$/i.test(text.trim())) break;
+    if (/Processado\s+pela/i.test(text)) break;
     if (/Parab[eé]ns/i.test(text)) continue; // Skip birthday messages inside events
+    // Skip BASE/OUTROS separator lines (dashes)
+    if (/BASE\s*\/\s*OUTROS/i.test(text) || /^-{4,}/.test(text.trim())) continue;
     
     // Try to extract period from "Mês/Ano" column (e.g. "8 / 2020" or "03 / 2019")
     if (!period) {
@@ -1414,33 +1466,33 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
     
     // Strategy 1: Labels on one line, values on same line after label (e.g. "Banco  033  Agência  82  C/C  00071...")
     // or labels on one line and values on next line
-    const hasBancoLabel = items.some(it => /^Banco$/i.test(it.str.trim()));
-    const hasAgLabel = items.some(it => /^Ag[eê]ncia$/i.test(it.str.trim()));
-    const hasCCLabel = items.some(it => /^(C\/C|Conta)$/i.test(it.str.trim()));
+    const hasBancoLabel = items.some(it => /^(Banco|BCO)$/i.test(it.str.trim()));
+    const hasAgLabel = items.some(it => /^(Ag[eê]ncia|AG)$/i.test(it.str.trim()));
+    const hasCCLabel = items.some(it => /^(C\/C|Conta|CONTA)$/i.test(it.str.trim()));
     
     if (hasBancoLabel || hasAgLabel || hasCCLabel) {
       // Collect label-value pairs from items on this line
       for (let j = 0; j < items.length; j++) {
         const label = items[j].str.trim();
         
-        if (/^Banco$/i.test(label) && !result.banco) {
+        if (/^(Banco|BCO)$/i.test(label) && !result.banco) {
           // Next item on same line is value
           if (j + 1 < items.length) {
             const nextVal = items[j + 1].str.trim();
-            if (nextVal && !/^(Ag[eê]ncia|C\/C|Conta|Local)$/i.test(nextVal)) {
+            if (nextVal && !/^(Ag[eê]ncia|AG|C\/C|Conta|CONTA|Local)$/i.test(nextVal)) {
               result.banco = nextVal;
             }
           }
         }
-        if (/^Ag[eê]ncia$/i.test(label) && !result.agencia) {
+        if (/^(Ag[eê]ncia|AG)$/i.test(label) && !result.agencia) {
           if (j + 1 < items.length) {
             const nextVal = items[j + 1].str.trim();
-            if (nextVal && !/^(C\/C|Conta|Banco)$/i.test(nextVal) && /[\d]/.test(nextVal)) {
+            if (nextVal && !/^(C\/C|Conta|CONTA|Banco|BCO)$/i.test(nextVal) && /[\d]/.test(nextVal)) {
               result.agencia = nextVal;
             }
           }
         }
-        if (/^(C\/C|Conta)$/i.test(label) && !result.contaCorrente) {
+        if (/^(C\/C|Conta|CONTA)$/i.test(label) && !result.contaCorrente) {
           if (j + 1 < items.length) {
             const nextVal = items[j + 1].str.trim();
             if (nextVal && /[\d]/.test(nextVal)) {
@@ -1457,7 +1509,7 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
           const label = items[j].str.trim();
           const labelX = items[j].x;
           
-          if (/^Banco$/i.test(label) && !result.banco) {
+          if (/^(Banco|BCO)$/i.test(label) && !result.banco) {
             for (const ni of nextItems) {
               if (Math.abs(ni.x - labelX) < 100 && ni.str.trim().length > 0) {
                 result.banco = ni.str.trim();
@@ -1465,7 +1517,7 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
               }
             }
           }
-          if (/^Ag[eê]ncia$/i.test(label) && !result.agencia) {
+          if (/^(Ag[eê]ncia|AG)$/i.test(label) && !result.agencia) {
             for (const ni of nextItems) {
               if (Math.abs(ni.x - labelX) < 100 && /[\d-]+/.test(ni.str.trim())) {
                 result.agencia = ni.str.trim();
@@ -1473,7 +1525,7 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
               }
             }
           }
-          if (/^(C\/C|Conta)$/i.test(label) && !result.contaCorrente) {
+          if (/^(C\/C|Conta|CONTA)$/i.test(label) && !result.contaCorrente) {
             for (const ni of nextItems) {
               if (Math.abs(ni.x - labelX) < 100 && /[\d.-]+/.test(ni.str.trim())) {
                 result.contaCorrente = ni.str.trim();
@@ -1487,7 +1539,7 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
     
     // Strategy 2: Inline regex (e.g. "Banco: 033  Agência: 82  C/C: 00071...")
     if (!result.banco) {
-      const bankMatch = text.match(/Banco[:\s]+([\d]+)/i);
+      const bankMatch = text.match(/(?:Banco|BCO)[:\s]+([\d]+)/i);
       if (bankMatch) result.banco = bankMatch[1].trim();
     }
     if (!result.agencia) {
