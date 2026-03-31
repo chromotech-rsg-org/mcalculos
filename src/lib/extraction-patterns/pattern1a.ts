@@ -1538,7 +1538,7 @@ const extractBankInfo = (lines: LayoutLine[]): { banco: string; agencia: string;
     
     // Strategy 2: Inline regex (e.g. "Banco: 033  Agência: 82  C/C: 00071...")
     if (!result.banco) {
-      const bankMatch = text.match(/Banco[:\s]+([\d]+)/i);
+      const bankMatch = text.match(/(?:Banco|BCO)[:\s]+([\d]+)/i);
       if (bankMatch) result.banco = bankMatch[1].trim();
     }
     if (!result.agencia) {
