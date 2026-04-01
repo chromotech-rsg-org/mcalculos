@@ -1,5 +1,34 @@
 import { ExtractedMonth, TabType, TabData } from '@/types';
 
+const normalizeComparableKey = (value: string): string => {
+  return value
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\|+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+};
+
+const isTableArtifactFieldKey = (key: string): boolean => {
+  const trimmed = key.trim();
+  return /^\d{3,4}\s+/.test(trimmed) || trimmed.includes('|');
+};
+
+const collectNormalizedEventDescriptions = (months: ExtractedMonth[]): Set<string> => {
+  const descriptions = new Set<string>();
+
+  months.forEach(month => {
+    month.eventos?.forEach(event => {
+      if (event.descricao?.trim()) {
+        descriptions.add(normalizeComparableKey(event.descricao));
+      }
+    });
+  });
+
+  return descriptions;
+};
+
 /**
  * Collect all unique field keys from months[].fields[], preserving first-appearance order.
  */
@@ -34,9 +63,12 @@ export const buildTabsFromMonths = (months: ExtractedMonth[], selectedTabs: TabT
 
   // Collect all dynamic field keys from fields[] (header, footer, bank data, etc.)
   const allFieldKeys = collectDynamicFieldKeys(months);
+  const normalizedEventDescriptions = collectNormalizedEventDescriptions(months);
   
   // Only include fields that have data in at least one month
   const activeFieldKeys = allFieldKeys.filter(key =>
+    !isTableArtifactFieldKey(key) &&
+    !normalizedEventDescriptions.has(normalizeComparableKey(key)) &&
     months.some(month => getDynamicFieldValue(month, key) !== '')
   );
 
