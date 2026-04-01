@@ -919,9 +919,11 @@ const parseEventLineByItems = (
     // Merged match: code + description in same item (e.g., "0010 Salário Base")
     const mergedMatch = trimmed.match(/^(\d{3,4})\s+(.+)/);
     if (mergedMatch) {
-      // Create a virtual TextItem for the code
+      // Create a virtual TextItem for the code, but keep reference to original
       eventCodeItem = { ...it, str: mergedMatch[1] };
       mergedDescFromCode = mergedMatch[2].trim();
+      // Store the original item's text to skip it later
+      (eventCodeItem as any).__mergedOriginalText = trimmed;
       break;
     }
   }
@@ -933,6 +935,9 @@ const parseEventLineByItems = (
   const descItems: string[] = [];
   const numericItems: TextItem[] = [];
   let passedCode = false;
+  
+  // Track the original merged item text to skip it in the loop
+  const mergedOriginalText = mergedDescFromCode ? (eventCodeItem as any).__mergedOriginalText || '' : '';
   
   // If code was merged with description, pre-populate descItems
   if (mergedDescFromCode) {
@@ -950,6 +955,9 @@ const parseEventLineByItems = (
       if (item === eventCodeItem) { passedCode = true; continue; }
       continue;
     }
+    
+    // Skip the original merged item (already extracted description from it)
+    if (mergedOriginalText && item.str.trim() === mergedOriginalText) continue;
     
     const val = item.str.trim();
     if (!val || val === '|') continue; // Skip pipe separators
