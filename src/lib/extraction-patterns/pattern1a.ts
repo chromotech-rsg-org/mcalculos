@@ -934,6 +934,9 @@ const parseEventLineByItems = (
   const numericItems: TextItem[] = [];
   let passedCode = false;
   
+  // Track the original merged item to skip it in the loop
+  const mergedOriginalItem = mergedDescFromCode ? eventCodeItem : null;
+  
   // If code was merged with description, pre-populate descItems
   if (mergedDescFromCode) {
     descItems.push(mergedDescFromCode);
@@ -950,6 +953,11 @@ const parseEventLineByItems = (
       if (item === eventCodeItem) { passedCode = true; continue; }
       continue;
     }
+    
+    // Skip the original merged item (already extracted description from it)
+    if (mergedOriginalItem && item.str.trim() === mergedOriginalItem.str.trim()) continue;
+    // Also skip items that start with the code + space (duplicate of merged text)
+    if (mergedDescFromCode && item.str.trim().match(/^\d{3,4}\s+/)) continue;
     
     const val = item.str.trim();
     if (!val || val === '|') continue; // Skip pipe separators
