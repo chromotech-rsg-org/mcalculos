@@ -31,12 +31,14 @@ const Documents: React.FC = () => {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportDoc, setExportDoc] = useState<Document | null>(null);
 
+  const isAdmin = currentUser?.role === 'admin';
+
   const loadDocuments = useCallback(async () => {
     if (currentUser) {
-      const docs = await getDocuments(currentUser.user_id);
+      const docs = await getDocuments(currentUser.user_id, isAdmin);
       setDocuments(docs);
     }
-  }, [currentUser]);
+  }, [currentUser, isAdmin]);
 
   useEffect(() => {
     loadDocuments();
@@ -192,6 +194,9 @@ const Documents: React.FC = () => {
                       <p className="text-sm text-muted-foreground truncate">{doc.description || 'Sem descrição'}</p>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
                         <span>{new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
+                        {isAdmin && doc.creator_name && (
+                          <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full">Criado por: {doc.creator_name}</span>
+                        )}
                       </div>
                     </div>
                   </div>

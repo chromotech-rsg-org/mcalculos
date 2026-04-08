@@ -100,9 +100,14 @@ const Users: React.FC = () => {
       // Admin editing existing user - update profile name
       await supabase.from('profiles').update({ name: formData.name }).eq('user_id', editingUser.user_id);
       
-      // Update role if changed
+      // Update role if changed (block changes to master admin by other admins)
       const currentRole = editingUser.role;
       if (formData.role !== currentRole) {
+        if (editingUser.email === MAIN_ADMIN_EMAIL) {
+          toast({ variant: 'destructive', title: 'Erro', description: 'O perfil do administrador master não pode ser alterado.' });
+          setIsLoading(false);
+          return;
+        }
         // Remove old role, add new
         await supabase.from('user_roles').delete().eq('user_id', editingUser.user_id);
         await supabase.from('user_roles').insert({ user_id: editingUser.user_id, role: formData.role });
@@ -357,13 +362,17 @@ const Users: React.FC = () => {
 
             <div className="space-y-2">
               <Label htmlFor="role">Perfil *</Label>
-              <Select value={formData.role} onValueChange={(value: UserRole) => setFormData(prev => ({ ...prev, role: value }))}>
-                <SelectTrigger><SelectValue placeholder="Selecione o perfil" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                  <SelectItem value="user">Usuário</SelectItem>
-                </SelectContent>
-              </Select>
+              {editingUser?.email === MAIN_ADMIN_EMAIL ? (
+                <p className="text-sm text-muted-foreground p-2 bg-muted rounded">Administrador Master (não pode ser alterado)</p>
+              ) : (
+                <Select value={formData.role} onValueChange={(value: UserRole) => setFormData(prev => ({ ...prev, role: value }))}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o perfil" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Administrador</SelectItem>
+                    <SelectItem value="user">Usuário</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <DialogFooter>
