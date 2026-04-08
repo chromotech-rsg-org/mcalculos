@@ -31,13 +31,21 @@ Deno.serve(async (req) => {
       throw new Error('A senha deve ter pelo menos 6 caracteres')
     }
 
-    // If changing another user's password, must be admin
-    if (userId && userId !== caller.id) {
-      const { data: isAdmin } = await supabaseAdmin.rpc('has_role', { _user_id: caller.id, _role: 'admin' })
-      if (!isAdmin) throw new Error('Sem permissão')
-    }
-
+    // Determine target user
     const targetUserId = userId || caller.id
+
+    // If changing another user's password, must be admin
+    if (targetUserId !== caller.id) {
+      const { data: roles } = await supabaseAdmin
+        .from('user_roles')
+        .select('role')
+        .eq('user_id', caller.id)
+        .eq('role', 'admin')
+      
+      if (!roles || roles.length === 0) {
+        throw new Error('Sem permissão')
+      }
+    }
 
     const { error } = await supabaseAdmin.auth.admin.updateUser(targetUserId, {
       password: newPassword,
@@ -49,8 +57,9 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   } catch (error) {
+    console.error('update-password error:', error.message)
     return new Response(JSON.stringify({ error: error.message }), {
-      status: 500,
+      status: 400,
       headers: { ...corsHeaders, 'Content-Type': 'application/json' },
     })
   }
