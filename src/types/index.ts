@@ -127,6 +127,7 @@ export interface Document {
   created_at: string;
   updated_at: string;
   extractionOptions?: ExtractionOptions;
+  creator_name?: string;
 }
 
 export interface AuthState {

@@ -194,6 +194,9 @@ const Documents: React.FC = () => {
                       <p className="text-sm text-muted-foreground truncate">{doc.description || 'Sem descrição'}</p>
                       <div className="flex items-center gap-3 text-xs text-muted-foreground mt-1">
                         <span>{new Date(doc.created_at).toLocaleDateString('pt-BR')}</span>
+                        {isAdmin && doc.creator_name && (
+                          <span className="bg-primary/10 text-primary px-2 py-0.5 rounded-full">Criado por: {doc.creator_name}</span>
+                        )}
                       </div>
                     </div>
                   </div>
