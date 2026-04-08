@@ -362,13 +362,17 @@ const Users: React.FC = () => {
 
             <div className="space-y-2">
               <Label htmlFor="role">Perfil *</Label>
-              <Select value={formData.role} onValueChange={(value: UserRole) => setFormData(prev => ({ ...prev, role: value }))}>
-                <SelectTrigger><SelectValue placeholder="Selecione o perfil" /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="admin">Administrador</SelectItem>
-                  <SelectItem value="user">Usuário</SelectItem>
-                </SelectContent>
-              </Select>
+              {editingUser?.email === MAIN_ADMIN_EMAIL ? (
+                <p className="text-sm text-muted-foreground p-2 bg-muted rounded">Administrador Master (não pode ser alterado)</p>
+              ) : (
+                <Select value={formData.role} onValueChange={(value: UserRole) => setFormData(prev => ({ ...prev, role: value }))}>
+                  <SelectTrigger><SelectValue placeholder="Selecione o perfil" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Administrador</SelectItem>
+                    <SelectItem value="user">Usuário</SelectItem>
+                  </SelectContent>
+                </Select>
+              )}
             </div>
 
             <DialogFooter>
