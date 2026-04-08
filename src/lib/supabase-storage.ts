@@ -132,5 +132,6 @@ function mapDocFromDb(data: any): Document {
     status: data.status || 'pending',
     created_at: data.created_at,
     updated_at: data.updated_at,
+    creator_name: data.creator_name,
   };
 }
