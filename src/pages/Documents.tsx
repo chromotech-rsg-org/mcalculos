@@ -31,12 +31,14 @@ const Documents: React.FC = () => {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [exportDoc, setExportDoc] = useState<Document | null>(null);
 
+  const isAdmin = currentUser?.role === 'admin';
+
   const loadDocuments = useCallback(async () => {
     if (currentUser) {
-      const docs = await getDocuments(currentUser.user_id);
+      const docs = await getDocuments(currentUser.user_id, isAdmin);
       setDocuments(docs);
     }
-  }, [currentUser]);
+  }, [currentUser, isAdmin]);
 
   useEffect(() => {
     loadDocuments();
