@@ -232,6 +232,35 @@ const Users: React.FC = () => {
     return true;
   };
 
+  const passwordDialog = (
+    <Dialog open={passwordDialogOpen} onOpenChange={setPasswordDialogOpen}>
+      <DialogContent className="max-w-sm">
+        <DialogHeader>
+          <DialogTitle>Alterar Senha</DialogTitle>
+          <DialogDescription>
+            {passwordTarget ? `Alterar senha de ${passwordTarget.name}` : 'Digite sua nova senha'}
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <Label htmlFor="newPassword">Nova Senha *</Label>
+            <Input id="newPassword" type="password" value={newPassword} onChange={e => setNewPassword(e.target.value)} minLength={6} placeholder="Mínimo 6 caracteres" />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="confirmPassword">Confirmar Senha *</Label>
+            <Input id="confirmPassword" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} minLength={6} />
+          </div>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setPasswordDialogOpen(false)}>Cancelar</Button>
+          <Button onClick={handleChangePassword} disabled={isChangingPassword || !newPassword || !confirmPassword} className="gradient-primary text-primary-foreground">
+            {isChangingPassword ? <><Loader2 className="h-4 w-4 mr-2 animate-spin" />Alterando...</> : 'Alterar Senha'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
   // Regular user view
   if (!isAdmin) {
     return (
@@ -273,6 +302,8 @@ const Users: React.FC = () => {
             </form>
           </CardContent>
         </Card>
+
+        {passwordDialog}
       </div>
     );
   }
