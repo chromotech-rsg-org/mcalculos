@@ -2,12 +2,13 @@ import { supabase } from '@/integrations/supabase/client';
 import { Document, DocumentFile, ExtractionTemplate } from '@/types';
 
 // Documents
-export const getDocuments = async (userId?: string): Promise<Document[]> => {
+export const getDocuments = async (userId?: string, isAdmin?: boolean): Promise<Document[]> => {
   // Light query: exclude heavy files (base64) and extracted_data columns for fast list loading
   let query = supabase.from('documents')
     .select('id, name, description, status, created_at, updated_at, payslip_pattern, template_id, user_id')
     .order('created_at', { ascending: false });
-  if (userId) {
+  // Admins see all documents; regular users see only their own
+  if (!isAdmin && userId) {
     query = query.eq('user_id', userId);
   }
   const { data, error } = await query;
@@ -15,7 +16,16 @@ export const getDocuments = async (userId?: string): Promise<Document[]> => {
     console.error('Error fetching documents:', error);
     return [];
   }
-  return (data || []).map(row => mapDocFromDb({ ...row, files: [], extracted_data: null }));
+
+  // Fetch profile names to show creator
+  const userIds = [...new Set((data || []).map(d => d.user_id))];
+  const profileMap: Record<string, string> = {};
+  if (userIds.length > 0) {
+    const { data: profiles } = await supabase.from('profiles').select('user_id, name').in('user_id', userIds);
+    (profiles || []).forEach(p => { profileMap[p.user_id] = p.name; });
+  }
+
+  return (data || []).map(row => mapDocFromDb({ ...row, files: [], extracted_data: null, creator_name: profileMap[row.user_id] || '' }));
 };
 
 export const getDocumentById = async (docId: string): Promise<Document | null> => {
