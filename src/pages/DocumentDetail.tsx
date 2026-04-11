@@ -99,6 +99,32 @@ const DocumentDetail: React.FC = () => {
     }
   };
 
+  const handleTemplateChange = (value: string) => {
+    setSelectedTemplateId(value);
+    if (doc) {
+      const updatedDoc = {
+        ...doc,
+        template_id: value !== 'none' ? value : undefined,
+        updated_at: new Date().toISOString(),
+      };
+      
+      // If a template is selected and data is already extracted, apply template
+      if (value !== 'none' && updatedDoc.extracted_data) {
+        const tmpl = templates.find(t => t.id === value);
+        if (tmpl) {
+          const updatedMonths = applyTemplate(updatedDoc.extracted_data.months, tmpl);
+          updatedDoc.extracted_data = { ...updatedDoc.extracted_data, months: updatedMonths };
+        }
+      }
+      
+      setDoc(updatedDoc);
+      saveDocument(updatedDoc);
+      if (value !== 'none') {
+        toast({ title: 'Modelo aplicado!', description: 'O modelo de validação foi aplicado aos dados.' });
+      }
+    }
+  };
+
   const handleExtraction = async () => {
     if (!doc) return;
     
