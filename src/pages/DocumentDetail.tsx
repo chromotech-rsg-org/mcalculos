@@ -51,11 +51,13 @@ const DocumentDetail: React.FC = () => {
         if (document) {
           setDoc(document);
           setSelectedPattern(document.payslip_pattern || document.extracted_data?.payslipPattern || 'auto');
+          setSelectedTemplateId(document.template_id || 'none');
         } else {
           navigate('/documents');
         }
       });
     }
+    getTemplates().then(setTemplates);
   }, [id, navigate]);
 
   // Convert base64 PDF data to Blob URLs for reliable iframe rendering
