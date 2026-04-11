@@ -169,9 +169,9 @@ const EventsTabView: React.FC<{
 }) => {
   const [subTab, setSubTab] = useState<'vencimentos' | 'descontos' | 'quantidade'>('vencimentos');
 
-  const vencimentoEvents = useMemo(() => events.filter(e => e.vencimento && e.vencimento !== '0' && e.vencimento !== ''), [events]);
-  const descontoEvents = useMemo(() => events.filter(e => e.desconto && e.desconto !== '0' && e.desconto !== ''), [events]);
-  const quantidadeEvents = useMemo(() => events.filter(e => e.referencia && e.referencia !== '0' && e.referencia !== ''), [events]);
+  const vencimentoEvents = useMemo(() => events.filter(e => e.vencimento && e.vencimento !== '0' && e.vencimento !== '').sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR')), [events]);
+  const descontoEvents = useMemo(() => events.filter(e => e.desconto && e.desconto !== '0' && e.desconto !== '').sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR')), [events]);
+  const quantidadeEvents = useMemo(() => events.filter(e => e.referencia && e.referencia !== '0' && e.referencia !== '').sort((a, b) => a.descricao.localeCompare(b.descricao, 'pt-BR')), [events]);
 
   const currentEvents = subTab === 'vencimentos' ? vencimentoEvents : subTab === 'descontos' ? descontoEvents : quantidadeEvents;
   const valueField = subTab === 'vencimentos' ? 'vencimento' : subTab === 'descontos' ? 'desconto' : 'referencia';

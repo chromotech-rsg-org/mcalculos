@@ -531,18 +531,29 @@ const DocumentDetail: React.FC = () => {
                           </Button>
                         </div>
 
-                        {month.fields && month.fields.length > 0 && (
-                          <div className="grid grid-cols-2 gap-2 text-sm">
-                            {month.fields.map((field, fieldIdx) => (
-                              <div key={`${field.key}-${fieldIdx}`}>
-                                <p className="text-muted-foreground text-xs">{field.key}</p>
-                                <div className="font-medium text-xs">
-                                  {renderEditableCell(field.value, monthIndex, `fields.${fieldIdx}.value`)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        {month.fields && month.fields.length > 0 && (() => {
+                          const HEADER_PATTERNS = /^(Empresa|CNPJ|Nome\s*Funcion|Nome|Matr[ií]cula|Cadastro|Registro|Compet[eê]ncia|Tipo\s*(?:de\s*)?Folha|Centro\s*(?:de\s*)?Custo|Folha\s*N|Local|Cargo|Fun[cç][aã]o|CBO|Departamento|Filial|Data\s*(?:de\s*)?Admiss|Endere[cç]o|Bairro|Cidade|CEP|UF|PIS|CPF|Identidade|Data\s*Cr[eé]dito|Dep[\.\s])/i;
+                          const FOOTER_PATTERNS = /^(Sal[aá]rio\s*(?:Base|Contr)|Base\s*(?:FGTS|INSS|IRRF|IR)|FGTS\s*(?:do\s*)?M[eê]s|Faixa\s*IRRF|IRRF|Total\s*(?:Vencimentos|Descontos)|Valor\s*L[ií]quido|Banco|Ag[eê]ncia|Conta\s*Corrente)/i;
+                          return (
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              {month.fields.map((field, fieldIdx) => {
+                                const isHeader = HEADER_PATTERNS.test(field.key);
+                                const isFooter = FOOTER_PATTERNS.test(field.key);
+                                return (
+                                  <div key={`${field.key}-${fieldIdx}`} className={
+                                    isHeader ? 'bg-red-50 border border-red-200 rounded px-2 py-1' :
+                                    isFooter ? 'bg-red-50 border border-red-200 rounded px-2 py-1' : ''
+                                  }>
+                                    <p className={`text-xs ${isHeader || isFooter ? 'text-red-700 font-semibold' : 'text-muted-foreground'}`}>{field.key}</p>
+                                    <div className={`font-medium text-xs ${isHeader || isFooter ? 'text-red-900' : ''}`}>
+                                      {renderEditableCell(field.value, monthIndex, `fields.${fieldIdx}.value`)}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
 
                         {month.eventos && month.eventos.length > 0 && (
                           <div className="mt-2">
