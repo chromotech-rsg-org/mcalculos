@@ -12,6 +12,7 @@ import Dashboard from "@/pages/Dashboard";
 import Documents from "@/pages/Documents";
 import DocumentDetail from "@/pages/DocumentDetail";
 import Users from "@/pages/Users";
+import Templates from "@/pages/Templates";
 import NotFound from "@/pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -34,6 +35,7 @@ const App = () => (
             <Route path="/documents" element={<Documents />} />
             <Route path="/documents/:id" element={<DocumentDetail />} />
             <Route path="/users" element={<Users />} />
+            <Route path="/templates" element={<Templates />} />
           </Route>
           
           {/* Redirects */}

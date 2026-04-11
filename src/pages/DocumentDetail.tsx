@@ -11,8 +11,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { getDocumentById, saveDocument, deleteDocument } from '@/lib/supabase-storage';
-import { Document, ExtractedData, ExtractedMonth } from '@/types';
+import { getDocumentById, saveDocument, deleteDocument, getTemplates } from '@/lib/supabase-storage';
+import { Document, ExtractedData, ExtractedMonth, ExtractionTemplate } from '@/types';
+import { applyTemplate } from '@/lib/extraction-patterns/pattern1a';
 import { buildTabsFromMonths } from '@/lib/build-tabs';
 import { extractDataFromPDF, extractDataFromImage } from '@/lib/extraction';
 import { exportToExcel, exportToCSV } from '@/lib/export';
@@ -39,7 +40,8 @@ const DocumentDetail: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [selectedPattern, setSelectedPattern] = useState<string>('auto');
-  
+  const [templates, setTemplates] = useState<ExtractionTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('none');
   const pdfContainerRef = useRef<HTMLDivElement>(null);
   const [pdfBlobUrls, setPdfBlobUrls] = useState<Record<number, string>>({});
 
@@ -49,11 +51,13 @@ const DocumentDetail: React.FC = () => {
         if (document) {
           setDoc(document);
           setSelectedPattern(document.payslip_pattern || document.extracted_data?.payslipPattern || 'auto');
+          setSelectedTemplateId(document.template_id || 'none');
         } else {
           navigate('/documents');
         }
       });
     }
+    getTemplates().then(setTemplates);
   }, [id, navigate]);
 
   // Convert base64 PDF data to Blob URLs for reliable iframe rendering
@@ -92,6 +96,32 @@ const DocumentDetail: React.FC = () => {
       };
       setDoc(updatedDoc);
       saveDocument(updatedDoc);
+    }
+  };
+
+  const handleTemplateChange = (value: string) => {
+    setSelectedTemplateId(value);
+    if (doc) {
+      const updatedDoc = {
+        ...doc,
+        template_id: value !== 'none' ? value : undefined,
+        updated_at: new Date().toISOString(),
+      };
+      
+      // If a template is selected and data is already extracted, apply template
+      if (value !== 'none' && updatedDoc.extracted_data) {
+        const tmpl = templates.find(t => t.id === value);
+        if (tmpl) {
+          const updatedMonths = applyTemplate(updatedDoc.extracted_data.months, tmpl);
+          updatedDoc.extracted_data = { ...updatedDoc.extracted_data, months: updatedMonths };
+        }
+      }
+      
+      setDoc(updatedDoc);
+      saveDocument(updatedDoc);
+      if (value !== 'none') {
+        toast({ title: 'Modelo aplicado!', description: 'O modelo de validação foi aplicado aos dados.' });
+      }
     }
   };
 
@@ -379,6 +409,23 @@ const DocumentDetail: React.FC = () => {
               </Select>
             </div>
 
+            {templates.length > 0 && (
+              <div className="space-y-2 sm:w-64">
+                <Label>Modelo de Validação</Label>
+                <Select value={selectedTemplateId} onValueChange={handleTemplateChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Nenhum modelo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    {templates.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="flex items-center gap-3 flex-1">
               {doc.status === 'pending' && (
                 <>
@@ -531,18 +578,29 @@ const DocumentDetail: React.FC = () => {
                           </Button>
                         </div>
 
-                        {month.fields && month.fields.length > 0 && (
-                          <div className="grid grid-cols-2 gap-2 text-sm">
-                            {month.fields.map((field, fieldIdx) => (
-                              <div key={`${field.key}-${fieldIdx}`}>
-                                <p className="text-muted-foreground text-xs">{field.key}</p>
-                                <div className="font-medium text-xs">
-                                  {renderEditableCell(field.value, monthIndex, `fields.${fieldIdx}.value`)}
-                                </div>
-                              </div>
-                            ))}
-                          </div>
-                        )}
+                        {month.fields && month.fields.length > 0 && (() => {
+                          const HEADER_PATTERNS = /^(Empresa|CNPJ|Nome\s*Funcion|Nome|Matr[ií]cula|Cadastro|Registro|Compet[eê]ncia|Tipo\s*(?:de\s*)?Folha|Centro\s*(?:de\s*)?Custo|Folha\s*N|Local|Cargo|Fun[cç][aã]o|CBO|Departamento|Filial|Data\s*(?:de\s*)?Admiss|Endere[cç]o|Bairro|Cidade|CEP|UF|PIS|CPF|Identidade|Data\s*Cr[eé]dito|Dep[\.\s])/i;
+                          const FOOTER_PATTERNS = /^(Sal[aá]rio\s*(?:Base|Contr)|Base\s*(?:FGTS|INSS|IRRF|IR)|FGTS\s*(?:do\s*)?M[eê]s|Faixa\s*IRRF|IRRF|Total\s*(?:Vencimentos|Descontos)|Valor\s*L[ií]quido|Banco|Ag[eê]ncia|Conta\s*Corrente)/i;
+                          return (
+                            <div className="grid grid-cols-2 gap-2 text-sm">
+                              {month.fields.map((field, fieldIdx) => {
+                                const isHeader = HEADER_PATTERNS.test(field.key);
+                                const isFooter = FOOTER_PATTERNS.test(field.key);
+                                return (
+                                  <div key={`${field.key}-${fieldIdx}`} className={
+                                    isHeader ? 'bg-red-50 border border-red-200 rounded px-2 py-1' :
+                                    isFooter ? 'bg-red-50 border border-red-200 rounded px-2 py-1' : ''
+                                  }>
+                                    <p className={`text-xs ${isHeader || isFooter ? 'text-red-700 font-semibold' : 'text-muted-foreground'}`}>{field.key}</p>
+                                    <div className={`font-medium text-xs ${isHeader || isFooter ? 'text-red-900' : ''}`}>
+                                      {renderEditableCell(field.value, monthIndex, `fields.${fieldIdx}.value`)}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        })()}
 
                         {month.eventos && month.eventos.length > 0 && (
                           <div className="mt-2">

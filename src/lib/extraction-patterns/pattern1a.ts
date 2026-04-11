@@ -2489,6 +2489,66 @@ const extractAnnualReport = (pagesItems: TextItem[][]): Pattern1aResult => {
   return { employeeName, cnpj, months };
 };
 
+/**
+ * Detect if a single page contains multiple payslips by looking for
+ * repeated header patterns (CNPJ, Competência, event table headers).
+ * Returns split boundaries (Y positions) or null if single payslip.
+ */
+const detectMultiPayslipBoundaries = (items: TextItem[]): number[] | null => {
+  const lines = groupIntoLines(items);
+  
+  // Find lines with CNPJ patterns (each payslip has its own CNPJ line in the header)
+  const cnpjLineYs: number[] = [];
+  for (const line of lines) {
+    const normalizedText = line.text.replace(/[\u2010-\u2015\u2212\uFE58\uFE63\uFF0D]/g, '-');
+    if (/CNPJ[:\s]*([\d./-]+)/i.test(normalizedText) || /(\d{2}\.\d{3}\.\d{3}\/\d{4}[.-]\d{2})/.test(normalizedText)) {
+      cnpjLineYs.push(line.y);
+    }
+  }
+
+  // If only 0 or 1 CNPJ found, it's a single payslip
+  if (cnpjLineYs.length <= 1) return null;
+
+  // Sort Y positions (PDF Y axis: higher Y = lower on page for our grouped lines)
+  cnpjLineYs.sort((a, b) => a - b);
+
+  // Calculate split boundaries: midpoint between consecutive CNPJ lines
+  const boundaries: number[] = [];
+  for (let i = 0; i < cnpjLineYs.length - 1; i++) {
+    // Find the actual boundary by looking for the start of the next payslip header
+    // Use a point slightly above the next CNPJ line
+    const midY = (cnpjLineYs[i] + cnpjLineYs[i + 1]) / 2;
+    boundaries.push(midY);
+  }
+
+  return boundaries;
+};
+
+/**
+ * Split page items into multiple segments based on Y boundaries.
+ * Each segment represents a separate payslip on the same page.
+ */
+const splitPageItems = (items: TextItem[], boundaries: number[]): TextItem[][] => {
+  // Sort boundaries
+  const sortedBounds = [...boundaries].sort((a, b) => a - b);
+  
+  // Create segments
+  const segments: TextItem[][] = Array.from({ length: sortedBounds.length + 1 }, () => []);
+  
+  for (const item of items) {
+    let segIdx = 0;
+    for (let i = 0; i < sortedBounds.length; i++) {
+      if (item.y > sortedBounds[i]) {
+        segIdx = i + 1;
+      }
+    }
+    segments[segIdx].push(item);
+  }
+
+  // Filter out empty segments
+  return segments.filter(seg => seg.length > 0);
+};
+
 export const extractPattern1a = (pagesItems: TextItem[][]): Pattern1aResult => {
   // Check if this is an annual report (PLANOVA-style)
   if (isAnnualReport(pagesItems)) {
@@ -2500,20 +2560,27 @@ export const extractPattern1a = (pagesItems: TextItem[][]): Pattern1aResult => {
   const months: ExtractedMonth[] = [];
 
   for (const pageItems of pagesItems) {
-    const result = extractPattern1aPage(pageItems);
+    // Check if this page contains multiple payslips
+    const boundaries = detectMultiPayslipBoundaries(pageItems);
+    
+    const segments = boundaries ? splitPageItems(pageItems, boundaries) : [pageItems];
 
-    if (result.employeeName && !employeeName) employeeName = result.employeeName;
-    if (result.cnpj && !cnpj) cnpj = result.cnpj;
+    for (const segmentItems of segments) {
+      const result = extractPattern1aPage(segmentItems);
 
-    if (result.month.fields.length > 0 || (result.month.eventos && result.month.eventos.length > 0)) {
-      // Duplicate page filtering: skip if same period + same totalVencimentos already exists
-      const isDuplicate = months.some(m =>
-        m.month === result.month.month &&
-        m.totalVencimentos === result.month.totalVencimentos &&
-        m.totalVencimentos !== ''
-      );
-      if (!isDuplicate) {
-        months.push(result.month);
+      if (result.employeeName && !employeeName) employeeName = result.employeeName;
+      if (result.cnpj && !cnpj) cnpj = result.cnpj;
+
+      if (result.month.fields.length > 0 || (result.month.eventos && result.month.eventos.length > 0)) {
+        // Duplicate page filtering: skip if same period + same totalVencimentos already exists
+        const isDuplicate = months.some(m =>
+          m.month === result.month.month &&
+          m.totalVencimentos === result.month.totalVencimentos &&
+          m.totalVencimentos !== ''
+        );
+        if (!isDuplicate) {
+          months.push(result.month);
+        }
       }
     }
   }
