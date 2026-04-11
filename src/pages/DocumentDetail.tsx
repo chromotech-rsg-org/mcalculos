@@ -11,8 +11,9 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useToast } from '@/hooks/use-toast';
-import { getDocumentById, saveDocument, deleteDocument } from '@/lib/supabase-storage';
-import { Document, ExtractedData, ExtractedMonth } from '@/types';
+import { getDocumentById, saveDocument, deleteDocument, getTemplates } from '@/lib/supabase-storage';
+import { Document, ExtractedData, ExtractedMonth, ExtractionTemplate } from '@/types';
+import { applyTemplate } from '@/lib/extraction-patterns/pattern1a';
 import { buildTabsFromMonths } from '@/lib/build-tabs';
 import { extractDataFromPDF, extractDataFromImage } from '@/lib/extraction';
 import { exportToExcel, exportToCSV } from '@/lib/export';
