@@ -40,7 +40,8 @@ const DocumentDetail: React.FC = () => {
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
   const [selectedPattern, setSelectedPattern] = useState<string>('auto');
-  
+  const [templates, setTemplates] = useState<ExtractionTemplate[]>([]);
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string>('none');
   const pdfContainerRef = useRef<HTMLDivElement>(null);
   const [pdfBlobUrls, setPdfBlobUrls] = useState<Record<number, string>>({});
 
