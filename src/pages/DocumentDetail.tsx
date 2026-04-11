@@ -409,6 +409,23 @@ const DocumentDetail: React.FC = () => {
               </Select>
             </div>
 
+            {templates.length > 0 && (
+              <div className="space-y-2 sm:w-64">
+                <Label>Modelo de Validação</Label>
+                <Select value={selectedTemplateId} onValueChange={handleTemplateChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Nenhum modelo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Nenhum</SelectItem>
+                    {templates.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
             <div className="flex items-center gap-3 flex-1">
               {doc.status === 'pending' && (
                 <>
