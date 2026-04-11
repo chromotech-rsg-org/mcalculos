@@ -15,6 +15,7 @@ interface SidebarProps {
 const navItems: { path: string; label: string; icon: LordIconName }[] = [
   { path: '/dashboard', label: 'Dashboard', icon: 'dashboard' },
   { path: '/documents', label: 'Meus Documentos', icon: 'document' },
+  { path: '/templates', label: 'Modelos', icon: 'save' },
   { path: '/users', label: 'Usuários', icon: 'users' },
 ];
 
