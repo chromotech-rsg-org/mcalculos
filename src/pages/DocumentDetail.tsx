@@ -47,7 +47,7 @@ const DocumentDetail: React.FC = () => {
       getDocumentById(id).then(document => {
         if (document) {
           setDoc(document);
-          setSelectedPattern(document.payslip_pattern || document.extracted_data?.payslipPattern || 'auto');
+          // pattern is auto-detected during extraction
           setSelectedTemplateId(document.template_id || 'none');
         } else {
           navigate('/documents');
@@ -83,18 +83,6 @@ const DocumentDetail: React.FC = () => {
     };
   }, [doc?.id, doc?.files.length]);
 
-  const handlePatternChange = (value: string) => {
-    setSelectedPattern(value);
-    if (doc) {
-      const updatedDoc = {
-        ...doc,
-        payslip_pattern: value !== 'auto' ? value : undefined,
-        updated_at: new Date().toISOString(),
-      };
-      setDoc(updatedDoc);
-      saveDocument(updatedDoc);
-    }
-  };
 
   const handleTemplateChange = (value: string) => {
     setSelectedTemplateId(value);
@@ -186,9 +174,6 @@ const DocumentDetail: React.FC = () => {
       setDoc(finalDoc);
       await saveDocument(finalDoc);
       
-      if (detectedPattern && selectedPattern === 'auto') {
-        setSelectedPattern(detectedPattern);
-      }
       
       toast({
         title: 'Extração concluída!',
