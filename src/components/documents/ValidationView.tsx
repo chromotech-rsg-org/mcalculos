@@ -971,34 +971,6 @@ const ValidationView: React.FC<ValidationViewProps> = ({ data, onUpdate }) => {
 
       {/* Toolbar */}
       <div className="flex flex-wrap gap-2 items-center">
-        {templates.length > 0 && activeTab === 'fields' && (
-          <div className="flex items-center gap-2">
-            <Select onValueChange={handleApplyTemplate}>
-              <SelectTrigger className="w-56 h-9">
-                <SelectValue placeholder="Aplicar modelo salvo..." />
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map(t => (
-                  <SelectItem key={t.id} value={t.id}>
-                    {t.name} ({t.field_mappings.length} regras)
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select onValueChange={handleDeleteTemplate}>
-              <SelectTrigger className="w-10 h-9 px-2">
-                <Trash2 className="h-3.5 w-3.5" />
-              </SelectTrigger>
-              <SelectContent>
-                {templates.map(t => (
-                  <SelectItem key={t.id} value={t.id}>
-                    Excluir: {t.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-        )}
 
         <div className="flex gap-2 ml-auto">
           {activeTab === 'fields' && groupMode ? (
