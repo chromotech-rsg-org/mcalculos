@@ -294,14 +294,30 @@ const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpe
                 {eventColumns.length > 0 && (
                   <>
                     <p className="text-xs font-semibold text-muted-foreground px-2 pt-3 pb-1">Eventos ({eventColumns.length / 5} linhas)</p>
-                    {eventColumns.map(col => (
-                      <label key={col} className="flex items-center gap-2 px-2 py-1.5 rounded hover:bg-muted cursor-pointer text-sm">
-                        <Checkbox checked={selectedLegacyColumns.includes(col)} onCheckedChange={() => {
-                          setSelectedLegacyColumns(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
-                        }} />
-                        {col}
-                      </label>
-                    ))}
+                    {eventColumns.map(col => {
+                      const isHeader = isHeaderField(col);
+                      const isFooter = isFooterField(col);
+                      const bgClass = isHeader 
+                        ? 'bg-red-50 hover:bg-red-100' 
+                        : isFooter 
+                          ? 'bg-amber-50 hover:bg-amber-100' 
+                          : 'hover:bg-muted';
+                      const textClass = isHeader 
+                        ? 'text-red-700 font-medium' 
+                        : isFooter 
+                          ? 'text-amber-700 font-medium' 
+                          : '';
+                      const icon = isHeader || isFooter ? <Hash className="h-3 w-3 opacity-60" /> : null;
+                      return (
+                        <label key={col} className={`flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer text-sm ${bgClass} ${textClass}`}>
+                          <Checkbox checked={selectedLegacyColumns.includes(col)} onCheckedChange={() => {
+                            setSelectedLegacyColumns(prev => prev.includes(col) ? prev.filter(c => c !== col) : [...prev, col]);
+                          }} />
+                          {icon}
+                          {col}
+                        </label>
+                      );
+                    })}
                   </>
                 )}
               </div>
