@@ -101,10 +101,9 @@ const DocumentDetail: React.FC = () => {
       const tmpl = templates.find(t => t.id === selectedTemplateId);
       if (tmpl) {
         const updatedMonths = applyTemplate(updatedDoc.extracted_data.months, tmpl);
-        updatedDoc.extracted_data = { ...updatedDoc.extracted_data, months: updatedMonths };
         // Rebuild tabs after applying template
         const tabs = buildTabsFromMonths(updatedMonths, ['vencimentos', 'descontos', 'quantidade']);
-        updatedDoc.extracted_data = { ...updatedDoc.extracted_data, months: updatedMonths, tabs };
+        updatedDoc.extracted_data = { ...updatedDoc.extracted_data, months: updatedMonths, tabs, payslipPattern: tmpl.name };
       }
     }
     
