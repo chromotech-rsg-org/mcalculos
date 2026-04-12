@@ -181,7 +181,7 @@ const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpe
                     </div>
                     <ScrollArea className="h-[200px] border rounded-lg">
                       <div className="p-2 space-y-0.5">
-                        {(liveTabs![tab]?.columns || []).map(col => (
+                        {[...(liveTabs![tab]?.columns || [])].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(col => (
                           <label key={col} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer text-sm">
                             <Checkbox
                               checked={(selectedColumnsByTab[tab] || []).includes(col)}
