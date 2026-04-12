@@ -36,7 +36,7 @@ const DocumentDetail: React.FC = () => {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
-  const [selectedPattern, setSelectedPattern] = useState<string>('auto');
+  const [selectedPattern] = useState<string>('auto');
   const [templates, setTemplates] = useState<ExtractionTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('none');
   const pdfContainerRef = useRef<HTMLDivElement>(null);
