@@ -91,6 +91,8 @@ export interface ExtractedData {
   documentType: 'holerite_normal' | 'relatorio_anual' | 'relatorio_imagem' | 'holerite_imagem' | 'termo_rescisao';
   payslipPattern?: string;
   months: ExtractedMonth[];
+  /** Original months before any template application — used as baseline for switching templates */
+  _originalMonths?: ExtractedMonth[];
   extractedAt: string;
   tabs?: {
     vencimentos?: TabData;

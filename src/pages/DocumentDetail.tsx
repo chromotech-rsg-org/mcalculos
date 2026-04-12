@@ -89,21 +89,25 @@ const DocumentDetail: React.FC = () => {
   };
 
   const handleApplyTemplate = () => {
-    if (!doc) return;
+    if (!doc || !doc.extracted_data) return;
     const updatedDoc = {
       ...doc,
       template_id: selectedTemplateId !== 'none' ? selectedTemplateId : undefined,
       updated_at: new Date().toISOString(),
     };
     
-    // If a template is selected and data is already extracted, apply template
-    if (selectedTemplateId !== 'none' && updatedDoc.extracted_data) {
+    if (selectedTemplateId !== 'none') {
       const tmpl = templates.find(t => t.id === selectedTemplateId);
       if (tmpl) {
-        const updatedMonths = applyTemplate(updatedDoc.extracted_data.months, tmpl);
-        // Rebuild tabs after applying template
+        // Always apply template from the ORIGINAL baseline months
+        const baselineMonths = updatedDoc.extracted_data!._originalMonths || updatedDoc.extracted_data!.months;
+        // Save original months if not yet saved
+        if (!updatedDoc.extracted_data!._originalMonths) {
+          updatedDoc.extracted_data = { ...updatedDoc.extracted_data!, _originalMonths: JSON.parse(JSON.stringify(baselineMonths)) };
+        }
+        const updatedMonths = applyTemplate(baselineMonths, tmpl);
         const tabs = buildTabsFromMonths(updatedMonths, ['vencimentos', 'descontos', 'quantidade']);
-        updatedDoc.extracted_data = { ...updatedDoc.extracted_data, months: updatedMonths, tabs, payslipPattern: tmpl.name };
+        updatedDoc.extracted_data = { ...updatedDoc.extracted_data!, months: updatedMonths, tabs, payslipPattern: tmpl.name };
       }
     }
     
