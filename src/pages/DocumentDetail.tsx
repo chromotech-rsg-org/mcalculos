@@ -21,10 +21,7 @@ import DataTableView from '@/components/documents/DataTableView';
 import ExportColumnSelector from '@/components/documents/ExportColumnSelector';
 import ValidationView from '@/components/documents/ValidationView';
 
-const PATTERN_OPTIONS = [
-  { value: 'auto', label: 'Auto-detectar' },
-  { value: '1a', label: '1a - Holerite Normal (Folha Mensal)' },
-];
+// Pattern options removed — now using saved templates only
 
 const DocumentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
