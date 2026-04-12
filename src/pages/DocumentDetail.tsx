@@ -436,7 +436,7 @@ const DocumentDetail: React.FC = () => {
                     <p className="font-medium text-sm">Dados extraídos</p>
                     <p className="text-xs text-muted-foreground">
                       {doc.extracted_data?.months.length} período(s)
-                      {doc.extracted_data?.payslipPattern && ` • Modelo ${doc.extracted_data.payslipPattern}`}
+                      {doc.extracted_data?.payslipPattern && ` • ${doc.extracted_data.payslipPattern}`}
                     </p>
                   </div>
                 </>
