@@ -1166,6 +1166,13 @@ const extractEvents = (lines: LayoutLine[]): {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
         if (nextVals.length > 0) valorLiquido = nextVals[0].str.trim();
       }
+      // Value on PREVIOUS line (e.g., "Líquido a Receber =>" appears below the value)
+      if (!valorLiquido && i > 0) {
+        const prevVals = lines[i - 1].items
+          .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+          .sort((a, b) => b.x - a.x);
+        if (prevVals.length > 0) valorLiquido = prevVals[0].str.trim();
+      }
       continue;
     }
     
