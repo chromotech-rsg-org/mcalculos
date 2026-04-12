@@ -1476,6 +1476,13 @@ const extractFooter = (lines: LayoutLine[]): {
           }
         }
       }
+      // Try PREVIOUS line: value appears above the "Líquido a Receber =>" label
+      if (!result.valorLiquido && i > 0) {
+        const prevVals = lines[i - 1].items
+          .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+          .sort((a, b) => b.x - a.x); // rightmost value first
+        if (prevVals.length > 0) result.valorLiquido = prevVals[0].str.trim();
+      }
     }
   }
   
