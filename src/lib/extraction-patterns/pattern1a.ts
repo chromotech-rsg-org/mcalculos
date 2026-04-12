@@ -1166,6 +1166,13 @@ const extractEvents = (lines: LayoutLine[]): {
         const nextVals = lines[i + 1].items.filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','));
         if (nextVals.length > 0) valorLiquido = nextVals[0].str.trim();
       }
+      // Value on PREVIOUS line (e.g., "Líquido a Receber =>" appears below the value)
+      if (!valorLiquido && i > 0) {
+        const prevVals = lines[i - 1].items
+          .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+          .sort((a, b) => b.x - a.x);
+        if (prevVals.length > 0) valorLiquido = prevVals[0].str.trim();
+      }
       continue;
     }
     
@@ -1475,6 +1482,13 @@ const extractFooter = (lines: LayoutLine[]): {
             }
           }
         }
+      }
+      // Try PREVIOUS line: value appears above the "Líquido a Receber =>" label
+      if (!result.valorLiquido && i > 0) {
+        const prevVals = lines[i - 1].items
+          .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+          .sort((a, b) => b.x - a.x); // rightmost value first
+        if (prevVals.length > 0) result.valorLiquido = prevVals[0].str.trim();
       }
     }
   }
@@ -2214,8 +2228,11 @@ const isAnnualReport = (pagesItems: TextItem[][]): boolean => {
   // it's per-page payslips, NOT an annual report
   if (pagesItems.length >= 2) {
     const page2Lines = groupIntoLines(pagesItems[1]);
-    const page2HasOwnHeader = page2Lines.some(l =>
+    const page2HeaderLines = page2Lines.slice(0, Math.min(20, page2Lines.length));
+    const page2HasOwnHeader = page2HeaderLines.some(l =>
       /CNPJ[:\s]*\d/i.test(l.text) ||
+      /\bCNPJ\b/i.test(l.text) ||
+      /Demonstrativo\s+de\s+Pagamento/i.test(l.text) ||
       /Refer[eê]ncia[:\s]*\d/i.test(l.text) ||
       /Compet[eê]ncia[:\s]*\d/i.test(l.text)
     );
