@@ -96,24 +96,30 @@ const DocumentDetail: React.FC = () => {
       updated_at: new Date().toISOString(),
     };
     
+    // Save original months baseline if not yet saved
+    if (!updatedDoc.extracted_data!._originalMonths) {
+      updatedDoc.extracted_data = { ...updatedDoc.extracted_data!, _originalMonths: JSON.parse(JSON.stringify(updatedDoc.extracted_data!.months)) };
+    }
+
+    const baselineMonths = updatedDoc.extracted_data!._originalMonths!;
+
     if (selectedTemplateId !== 'none') {
       const tmpl = templates.find(t => t.id === selectedTemplateId);
       if (tmpl) {
-        // Always apply template from the ORIGINAL baseline months
-        const baselineMonths = updatedDoc.extracted_data!._originalMonths || updatedDoc.extracted_data!.months;
-        // Save original months if not yet saved
-        if (!updatedDoc.extracted_data!._originalMonths) {
-          updatedDoc.extracted_data = { ...updatedDoc.extracted_data!, _originalMonths: JSON.parse(JSON.stringify(baselineMonths)) };
-        }
         const updatedMonths = applyTemplate(baselineMonths, tmpl);
         const tabs = buildTabsFromMonths(updatedMonths, ['vencimentos', 'descontos', 'quantidade']);
         updatedDoc.extracted_data = { ...updatedDoc.extracted_data!, months: updatedMonths, tabs, payslipPattern: tmpl.name };
       }
+    } else {
+      // Restore original data (no template)
+      const restoredMonths = JSON.parse(JSON.stringify(baselineMonths));
+      const tabs = buildTabsFromMonths(restoredMonths, ['vencimentos', 'descontos', 'quantidade']);
+      updatedDoc.extracted_data = { ...updatedDoc.extracted_data!, months: restoredMonths, tabs, payslipPattern: undefined };
     }
     
     setDoc(updatedDoc);
     saveDocument(updatedDoc);
-    toast({ title: 'Modelo aplicado!', description: 'O modelo de validação foi aplicado aos dados extraídos.' });
+    toast({ title: 'Modelo aplicado!', description: selectedTemplateId !== 'none' ? 'O modelo foi aplicado aos dados extraídos.' : 'Dados restaurados para a extração original.' });
   };
 
   const handleExtraction = async () => {
@@ -392,7 +398,7 @@ const DocumentDetail: React.FC = () => {
                     <SelectValue placeholder="Selecione o modelo..." />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="none">Auto-detectar</SelectItem>
+                    <SelectItem value="none">Sem modelo</SelectItem>
                     {templates.map(t => (
                       <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                     ))}
@@ -403,7 +409,7 @@ const DocumentDetail: React.FC = () => {
                 variant="outline"
                 size="default"
                 onClick={handleApplyTemplate}
-                disabled={!doc.extracted_data || selectedTemplateId === 'none'}
+                disabled={!doc.extracted_data}
               >
                 <CheckCircle className="h-4 w-4 mr-1" />
                 Aplicar
