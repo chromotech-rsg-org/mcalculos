@@ -2214,8 +2214,11 @@ const isAnnualReport = (pagesItems: TextItem[][]): boolean => {
   // it's per-page payslips, NOT an annual report
   if (pagesItems.length >= 2) {
     const page2Lines = groupIntoLines(pagesItems[1]);
-    const page2HasOwnHeader = page2Lines.some(l =>
+    const page2HeaderLines = page2Lines.slice(0, Math.min(20, page2Lines.length));
+    const page2HasOwnHeader = page2HeaderLines.some(l =>
       /CNPJ[:\s]*\d/i.test(l.text) ||
+      /\bCNPJ\b/i.test(l.text) ||
+      /Demonstrativo\s+de\s+Pagamento/i.test(l.text) ||
       /Refer[eê]ncia[:\s]*\d/i.test(l.text) ||
       /Compet[eê]ncia[:\s]*\d/i.test(l.text)
     );
