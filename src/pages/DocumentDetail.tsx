@@ -380,19 +380,30 @@ const DocumentDetail: React.FC = () => {
       <Card>
         <CardContent className="pt-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4">
-            <div className="space-y-2 sm:w-64">
-              <Label>Modelo do Holerite</Label>
-              <Select value={selectedTemplateId} onValueChange={handleTemplateChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o modelo..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Auto-detectar</SelectItem>
-                  {templates.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex items-end gap-2">
+              <div className="space-y-2 sm:w-64">
+                <Label>Modelo do Holerite</Label>
+                <Select value={selectedTemplateId} onValueChange={handleTemplateChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o modelo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Auto-detectar</SelectItem>
+                    {templates.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                variant="outline"
+                size="default"
+                onClick={handleApplyTemplate}
+                disabled={!doc.extracted_data || selectedTemplateId === 'none'}
+              >
+                <CheckCircle className="h-4 w-4 mr-1" />
+                Aplicar
+              </Button>
             </div>
 
             <div className="flex items-center gap-3 flex-1">
