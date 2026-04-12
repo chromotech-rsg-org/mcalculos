@@ -165,6 +165,7 @@ const DocumentDetail: React.FC = () => {
         documentType,
         payslipPattern: detectedPattern || (selectedPattern !== 'auto' ? selectedPattern : undefined),
         months: allMonths,
+        _originalMonths: JSON.parse(JSON.stringify(allMonths)),
         extractedAt: new Date().toISOString(),
         tabs,
       };
