@@ -53,7 +53,11 @@ const isDescontoByCode = (codigo: string, descricao: string): boolean => {
   if (/\bMENSALIDADE\b.*\bSINDICAL\b/i.test(normalized)) return true;
   if (/\bLIQUIDO\b.*\b(FER|ADICIONAL|13)/i.test(normalized)) return true;
   if (/\bPENS[AÃ]O\b/i.test(normalized)) return true;
-  if (/\bVALE\s+(TRANSPORTE|REFEI)/i.test(normalized)) return true;
+  if (/\bVALE\s+(TRANSPORTE|REFEI)/i.test(normalized)) {
+    // If it contains "PAGAMENTO" and NOT "DESC", it's a provento (credit), not a desconto
+    if (/PAGAMENTO/i.test(normalized) && !/DESC/i.test(normalized)) return false;
+    return true;
+  }
   if (/\bEMPR[EÉ]STIMO\b/i.test(normalized)) return true;
   if (/\bADIANTAMENTO\b/i.test(normalized)) return true;
   if (/\bCONTRIBUI[CÇ][AÃ]O\b/i.test(normalized) && !/\bBase\b/i.test(normalized)) return true;
@@ -316,7 +320,7 @@ const extractHeader = (lines: LayoutLine[]): {
       }
       
       // "MÊS/ANO" label on this line with value nearby (e.g. "MÊS/ANO 03 / 2019")
-      if (!result.period) {
+      if (!result.period && !/Evento|Discrimina/i.test(text)) {
         const mesAnoMatch = text.match(/M[eêÊ]S\s*\/\s*ANO\s*[:\s]*(\d{1,2})\s*\/\s*(\d{4})/i);
         if (mesAnoMatch) {
           const m = mesAnoMatch[1].padStart(2, '0');
@@ -328,7 +332,7 @@ const extractHeader = (lines: LayoutLine[]): {
       // "MÊS/ANO" label with month and year on separate nearby lines
       // Keypar rotated: items "03", "/", "2019" at similar X but different Y,
       // which means they appear on different "lines" and may be before OR after MÊS/ANO line
-      if (!result.period && /M[eêÊ]S\s*\/\s*ANO/i.test(text)) {
+      if (!result.period && /M[eêÊ]S\s*\/\s*ANO/i.test(text) && !/Evento|Discrimina/i.test(text)) {
         let foundMonth = '';
         let foundYear = '';
         // Scan nearby lines in BOTH directions (up to 8 before and 8 ahead)
