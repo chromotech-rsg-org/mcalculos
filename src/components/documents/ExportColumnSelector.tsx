@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { FileSpreadsheet } from 'lucide-react';
+import { FileSpreadsheet, Hash } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -22,6 +22,47 @@ const TAB_LABELS: Record<TabType, string> = {
   descontos: 'Descontos',
   quantidade: 'QTDE',
 };
+
+// Padrões para identificar campos de cabeçalho (destacar em vermelho/rosa)
+const HEADER_PATTERNS = [
+  /cnpj/i,
+  /empresa/i,
+  /nome/i,
+  /matr[íi]cula/i,
+  /compet[eê]ncia/i,
+  /lota[çc][aã]o/i,
+  /cargo|fun[çc][aã]o/i,
+  /admiss/i,
+  /departamento/i,
+  /n[íi]vel|classe/i,
+  /banco|ag[êe]ncia|conta/i,
+  /endere[çc]o|bairro|cidade|cep|uf/i,
+];
+
+// Padrões para identificar campos de rodapé (destacar em laranja/ambar)
+const FOOTER_PATTERNS = [
+  /sal[áa]rio\s*base/i,
+  /base\s*fgts/i,
+  /base\s*inss/i,
+  /base\s*irrf/i,
+  /total\s*vencimentos/i,
+  /total\s*descontos/i,
+  /valor\s*l[ií]quido/i,
+  /folha\s*paga/i,
+  /data\s*pagamento/i,
+  /fgts\s*retido/i,
+  /meses\s*trabalhados/i,
+  /total\s*proventos/i,
+  /total\s*dedu[çc][õo]es/i,
+];
+
+function isHeaderField(colName: string): boolean {
+  return HEADER_PATTERNS.some(pattern => pattern.test(colName));
+}
+
+function isFooterField(colName: string): boolean {
+  return FOOTER_PATTERNS.some(pattern => pattern.test(colName));
+}
 
 const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpenChange, data, filename }) => {
   const { toast } = useToast();
