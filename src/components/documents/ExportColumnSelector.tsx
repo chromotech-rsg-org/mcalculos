@@ -222,15 +222,31 @@ const ExportColumnSelector: React.FC<ExportColumnSelectorProps> = ({ open, onOpe
                     </div>
                     <ScrollArea className="h-[200px] border rounded-lg">
                       <div className="p-2 space-y-0.5">
-                        {[...(liveTabs![tab]?.columns || [])].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(col => (
-                          <label key={col} className="flex items-center gap-2 px-2 py-1 rounded hover:bg-muted cursor-pointer text-sm">
-                            <Checkbox
-                              checked={(selectedColumnsByTab[tab] || []).includes(col)}
-                              onCheckedChange={() => toggleTabColumn(tab, col)}
-                            />
-                            {col}
-                          </label>
-                        ))}
+                        {[...(liveTabs![tab]?.columns || [])].sort((a, b) => a.localeCompare(b, 'pt-BR')).map(col => {
+                          const isHeader = isHeaderField(col);
+                          const isFooter = isFooterField(col);
+                          const bgClass = isHeader 
+                            ? 'bg-red-50 hover:bg-red-100' 
+                            : isFooter 
+                              ? 'bg-amber-50 hover:bg-amber-100' 
+                              : 'hover:bg-muted';
+                          const textClass = isHeader 
+                            ? 'text-red-700 font-medium' 
+                            : isFooter 
+                              ? 'text-amber-700 font-medium' 
+                              : '';
+                          const icon = isHeader || isFooter ? <Hash className="h-3 w-3 opacity-60" /> : null;
+                          return (
+                            <label key={col} className={`flex items-center gap-2 px-2 py-1 rounded cursor-pointer text-sm ${bgClass} ${textClass}`}>
+                              <Checkbox
+                                checked={(selectedColumnsByTab[tab] || []).includes(col)}
+                                onCheckedChange={() => toggleTabColumn(tab, col)}
+                              />
+                              {icon}
+                              {col}
+                            </label>
+                          );
+                        })}
                       </div>
                     </ScrollArea>
                   </TabsContent>
