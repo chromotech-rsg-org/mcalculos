@@ -320,7 +320,7 @@ const extractHeader = (lines: LayoutLine[]): {
       }
       
       // "MÊS/ANO" label on this line with value nearby (e.g. "MÊS/ANO 03 / 2019")
-      if (!result.period) {
+      if (!result.period && !/Evento|Discrimina/i.test(text)) {
         const mesAnoMatch = text.match(/M[eêÊ]S\s*\/\s*ANO\s*[:\s]*(\d{1,2})\s*\/\s*(\d{4})/i);
         if (mesAnoMatch) {
           const m = mesAnoMatch[1].padStart(2, '0');
