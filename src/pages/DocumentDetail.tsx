@@ -394,34 +394,18 @@ const DocumentDetail: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-end gap-4">
             <div className="space-y-2 sm:w-64">
               <Label>Modelo do Holerite</Label>
-              <Select value={selectedPattern} onValueChange={handlePatternChange}>
+              <Select value={selectedTemplateId} onValueChange={handleTemplateChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione o modelo..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {PATTERN_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  <SelectItem value="none">Auto-detectar</SelectItem>
+                  {templates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
-            {templates.length > 0 && (
-              <div className="space-y-2 sm:w-64">
-                <Label>Modelo de Validação</Label>
-                <Select value={selectedTemplateId} onValueChange={handleTemplateChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Nenhum modelo..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhum</SelectItem>
-                    {templates.map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
             <div className="flex items-center gap-3 flex-1">
               {doc.status === 'pending' && (
