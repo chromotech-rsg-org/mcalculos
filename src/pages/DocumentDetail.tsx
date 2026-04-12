@@ -21,10 +21,7 @@ import DataTableView from '@/components/documents/DataTableView';
 import ExportColumnSelector from '@/components/documents/ExportColumnSelector';
 import ValidationView from '@/components/documents/ValidationView';
 
-const PATTERN_OPTIONS = [
-  { value: 'auto', label: 'Auto-detectar' },
-  { value: '1a', label: '1a - Holerite Normal (Folha Mensal)' },
-];
+// Pattern options removed — now using saved templates only
 
 const DocumentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>();
@@ -39,7 +36,7 @@ const DocumentDetail: React.FC = () => {
   const [exportDialogOpen, setExportDialogOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [activeFileIndex, setActiveFileIndex] = useState(0);
-  const [selectedPattern, setSelectedPattern] = useState<string>('auto');
+  const [selectedPattern] = useState<string>('auto');
   const [templates, setTemplates] = useState<ExtractionTemplate[]>([]);
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('none');
   const pdfContainerRef = useRef<HTMLDivElement>(null);
@@ -50,7 +47,7 @@ const DocumentDetail: React.FC = () => {
       getDocumentById(id).then(document => {
         if (document) {
           setDoc(document);
-          setSelectedPattern(document.payslip_pattern || document.extracted_data?.payslipPattern || 'auto');
+          // pattern is auto-detected during extraction
           setSelectedTemplateId(document.template_id || 'none');
         } else {
           navigate('/documents');
@@ -86,18 +83,6 @@ const DocumentDetail: React.FC = () => {
     };
   }, [doc?.id, doc?.files.length]);
 
-  const handlePatternChange = (value: string) => {
-    setSelectedPattern(value);
-    if (doc) {
-      const updatedDoc = {
-        ...doc,
-        payslip_pattern: value !== 'auto' ? value : undefined,
-        updated_at: new Date().toISOString(),
-      };
-      setDoc(updatedDoc);
-      saveDocument(updatedDoc);
-    }
-  };
 
   const handleTemplateChange = (value: string) => {
     setSelectedTemplateId(value);
@@ -189,9 +174,6 @@ const DocumentDetail: React.FC = () => {
       setDoc(finalDoc);
       await saveDocument(finalDoc);
       
-      if (detectedPattern && selectedPattern === 'auto') {
-        setSelectedPattern(detectedPattern);
-      }
       
       toast({
         title: 'Extração concluída!',
@@ -397,34 +379,18 @@ const DocumentDetail: React.FC = () => {
           <div className="flex flex-col sm:flex-row sm:items-end gap-4">
             <div className="space-y-2 sm:w-64">
               <Label>Modelo do Holerite</Label>
-              <Select value={selectedPattern} onValueChange={handlePatternChange}>
+              <Select value={selectedTemplateId} onValueChange={handleTemplateChange}>
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione o modelo..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {PATTERN_OPTIONS.map(opt => (
-                    <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                  <SelectItem value="none">Auto-detectar</SelectItem>
+                  {templates.map(t => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
             </div>
-
-            {templates.length > 0 && (
-              <div className="space-y-2 sm:w-64">
-                <Label>Modelo de Validação</Label>
-                <Select value={selectedTemplateId} onValueChange={handleTemplateChange}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Nenhum modelo..." />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="none">Nenhum</SelectItem>
-                    {templates.map(t => (
-                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
 
             <div className="flex items-center gap-3 flex-1">
               {doc.status === 'pending' && (
