@@ -2597,15 +2597,19 @@ export const applyTemplate = (months: ExtractedMonth[], template: ExtractionTemp
   return months.map(month => {
     const updatedFields = (month.fields || [])
       .filter(f => {
-        const mapping = template.field_mappings.find(m => m.originalKey === f.key);
+        // Match by original key (stored or current)
+        const origKey = f._originalKey || f.key;
+        const mapping = template.field_mappings.find(m => m.originalKey === origKey);
         return !mapping || !mapping.ignore;
       })
       .map(f => {
-        const mapping = template.field_mappings.find(m => m.originalKey === f.key);
+        const origKey = f._originalKey || f.key;
+        const mapping = template.field_mappings.find(m => m.originalKey === origKey);
         if (mapping && mapping.mappedKey !== mapping.originalKey) {
-          return { ...f, key: mapping.mappedKey };
+          return { ...f, key: mapping.mappedKey, _originalKey: origKey };
         }
-        return f;
+        // Preserve _originalKey even when no rename happens
+        return { ...f, _originalKey: origKey };
       });
     return { ...month, fields: updatedFields };
   });
