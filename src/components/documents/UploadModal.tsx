@@ -208,7 +208,6 @@ const UploadModal: React.FC<UploadModalProps> = ({
                   <SelectTrigger><SelectValue placeholder="Selecione o modelo..." /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="auto">Auto-detectar</SelectItem>
-                    <SelectItem value="1a">1a - Holerite Normal (Folha Mensal)</SelectItem>
                     {templates.length > 0 && (
                       <>
                         <div className="px-2 py-1.5 text-xs font-semibold text-muted-foreground border-t mt-1 pt-1">Modelos Salvos</div>
