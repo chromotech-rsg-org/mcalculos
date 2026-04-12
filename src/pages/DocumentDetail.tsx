@@ -86,28 +86,31 @@ const DocumentDetail: React.FC = () => {
 
   const handleTemplateChange = (value: string) => {
     setSelectedTemplateId(value);
-    if (doc) {
-      const updatedDoc = {
-        ...doc,
-        template_id: value !== 'none' ? value : undefined,
-        updated_at: new Date().toISOString(),
-      };
-      
-      // If a template is selected and data is already extracted, apply template
-      if (value !== 'none' && updatedDoc.extracted_data) {
-        const tmpl = templates.find(t => t.id === value);
-        if (tmpl) {
-          const updatedMonths = applyTemplate(updatedDoc.extracted_data.months, tmpl);
-          updatedDoc.extracted_data = { ...updatedDoc.extracted_data, months: updatedMonths };
-        }
-      }
-      
-      setDoc(updatedDoc);
-      saveDocument(updatedDoc);
-      if (value !== 'none') {
-        toast({ title: 'Modelo aplicado!', description: 'O modelo de validação foi aplicado aos dados.' });
+  };
+
+  const handleApplyTemplate = () => {
+    if (!doc) return;
+    const updatedDoc = {
+      ...doc,
+      template_id: selectedTemplateId !== 'none' ? selectedTemplateId : undefined,
+      updated_at: new Date().toISOString(),
+    };
+    
+    // If a template is selected and data is already extracted, apply template
+    if (selectedTemplateId !== 'none' && updatedDoc.extracted_data) {
+      const tmpl = templates.find(t => t.id === selectedTemplateId);
+      if (tmpl) {
+        const updatedMonths = applyTemplate(updatedDoc.extracted_data.months, tmpl);
+        updatedDoc.extracted_data = { ...updatedDoc.extracted_data, months: updatedMonths };
+        // Rebuild tabs after applying template
+        const tabs = buildTabsFromMonths(updatedMonths, ['vencimentos', 'descontos', 'quantidade']);
+        updatedDoc.extracted_data = { ...updatedDoc.extracted_data, months: updatedMonths, tabs };
       }
     }
+    
+    setDoc(updatedDoc);
+    saveDocument(updatedDoc);
+    toast({ title: 'Modelo aplicado!', description: 'O modelo de validação foi aplicado aos dados extraídos.' });
   };
 
   const handleExtraction = async () => {
@@ -377,19 +380,30 @@ const DocumentDetail: React.FC = () => {
       <Card>
         <CardContent className="pt-6 space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-end gap-4">
-            <div className="space-y-2 sm:w-64">
-              <Label>Modelo do Holerite</Label>
-              <Select value={selectedTemplateId} onValueChange={handleTemplateChange}>
-                <SelectTrigger>
-                  <SelectValue placeholder="Selecione o modelo..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="none">Auto-detectar</SelectItem>
-                  {templates.map(t => (
-                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <div className="flex items-end gap-2">
+              <div className="space-y-2 sm:w-64">
+                <Label>Modelo do Holerite</Label>
+                <Select value={selectedTemplateId} onValueChange={handleTemplateChange}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Selecione o modelo..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Auto-detectar</SelectItem>
+                    {templates.map(t => (
+                      <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <Button
+                variant="outline"
+                size="default"
+                onClick={handleApplyTemplate}
+                disabled={!doc.extracted_data || selectedTemplateId === 'none'}
+              >
+                <CheckCircle className="h-4 w-4 mr-1" />
+                Aplicar
+              </Button>
             </div>
 
             <div className="flex items-center gap-3 flex-1">
