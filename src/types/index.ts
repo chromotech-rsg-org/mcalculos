@@ -22,6 +22,8 @@ export interface DocumentFile {
 export interface ExtractedField {
   key: string;
   value: string;
+  /** Preserves the original extracted key so templates can always match correctly */
+  _originalKey?: string;
 }
 
 export interface PayslipEvent {
