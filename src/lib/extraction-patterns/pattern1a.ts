@@ -2221,9 +2221,19 @@ export const extractPattern1aPage = (items: TextItem[]): {
   addIfNew('Conta Corrente', bank.contaCorrente);
 
   // Add totals (from events first, then footer as fallback)
-  addIfNew('Total Vencimentos', totalVencimentos || footer.totalVencimentos);
-  addIfNew('Total Descontos', totalDescontos || footer.totalDescontos);
-  addIfNew('Valor Líquido', valorLiquido || footer.valorLiquido);
+  // Use force-add for totals: these should override any generic scanner values
+  const forceAdd = (key: string, value: string) => {
+    if (!value) return;
+    const idx = fields.findIndex(f => f.key.toLowerCase() === key.toLowerCase());
+    if (idx >= 0) {
+      fields[idx].value = value;
+    } else {
+      fields.push({ key, value });
+    }
+  };
+  forceAdd('Total Vencimentos', totalVencimentos || footer.totalVencimentos);
+  forceAdd('Total Descontos', totalDescontos || footer.totalDescontos);
+  forceAdd('Valor Líquido', valorLiquido || footer.valorLiquido);
 
   // Capture birthday/observation messages
   for (const line of lines) {
