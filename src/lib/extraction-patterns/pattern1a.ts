@@ -54,9 +54,10 @@ const isDescontoByCode = (codigo: string, descricao: string): boolean => {
   if (/\bLIQUIDO\b.*\b(FER|ADICIONAL|13)/i.test(normalized)) return true;
   if (/\bPENS[AÃ]O\b/i.test(normalized)) return true;
   if (/\bVALE\s+(TRANSPORTE|REFEI)/i.test(normalized)) {
-    // If it contains "PAGAMENTO" and NOT "DESC", it's a provento (credit), not a desconto
-    if (/PAGAMENTO/i.test(normalized) && !/DESC/i.test(normalized)) return false;
-    return true;
+    // Only classify as desconto if description explicitly contains "DESCONTO" or "DESC"
+    // Without explicit marker, let positional logic decide (avoids misclassifying proventos)
+    if (/DESC/i.test(normalized)) return true;
+    return false;
   }
   if (/\bEMPR[EÉ]STIMO\b/i.test(normalized)) return true;
   if (/\bADIANTAMENTO\b/i.test(normalized)) return true;
