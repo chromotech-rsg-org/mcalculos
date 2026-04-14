@@ -1336,6 +1336,7 @@ const extractFooter = (lines: LayoutLine[]): {
     }
     
     // Second footer row: BASE CÁLC. FGTS, FGTS DO MÊS, BASE CALCULO IRRF, VALOR LÍQUIDO
+    // Also matches: "Base para FGTS FGTS do mês Total de Proventos" (MENTOR format)
     if (/Base\s+(?:para\s+|C[aá]lc?\.?\s*)?FGTS/i.test(text) || (/FGTS\s+do\s+M[eê]s/i.test(text) && /Base\s+C[aá]l(?:c\.?|culo?)?\s*IRRF/i.test(text))) {
       const labelPositions2: { label: string; x: number }[] = [];
       const footerLabels2 = [
@@ -1366,6 +1367,48 @@ const extractFooter = (lines: LayoutLine[]): {
         let closestVal = '';
         let closestDist = Infinity;
         for (const v of allValues2) {
+          const dist = Math.abs(v.x - lp.x);
+          if (dist < closestDist && dist < 250) {
+            closestDist = dist;
+            closestVal = v.str.trim();
+          }
+        }
+        if (closestVal) {
+          (result as any)[lp.label] = closestVal;
+        }
+      }
+      continue;
+    }
+    
+    // MENTOR format: "Base Cál IRRF  Pensão Alim. Extra Folha  Total de Desconto" (multi-label row)
+    if (/Base\s+C[aá]l.*IRRF/i.test(text) && /Total\s+de\s+Desconto/i.test(text)) {
+      const labelPositions3: { label: string; x: number }[] = [];
+      const footerLabels3 = [
+        { regex: /Base\s+C[aá]l(?:c\.?|culo?)?\s*IRRF/i, name: 'baseIrrf' },
+        { regex: /Pens[aã]o\s+Alim/i, name: '_pensaoAlim' },
+        { regex: /Total\s+de\s+Descontos?/i, name: 'totalDescontos' },
+      ];
+      
+      for (const fl of footerLabels3) {
+        const x = findLabelXInItems(items, fl.regex);
+        if (x >= 0) labelPositions3.push({ label: fl.name, x });
+      }
+      
+      const valueItems3 = items
+        .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+        .sort((a, b) => a.x - b.x);
+      
+      const nextLineValues3 = (i + 1 < lines.length) ? lines[i + 1].items
+        .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().length > 1)
+        .sort((a, b) => a.x - b.x) : [];
+      
+      const allValues3 = valueItems3.length > 0 ? valueItems3 : nextLineValues3;
+      
+      for (const lp of labelPositions3) {
+        if (lp.label.startsWith('_')) continue; // skip internal labels
+        let closestVal = '';
+        let closestDist = Infinity;
+        for (const v of allValues3) {
           const dist = Math.abs(v.x - lp.x);
           if (dist < closestDist && dist < 250) {
             closestDist = dist;
