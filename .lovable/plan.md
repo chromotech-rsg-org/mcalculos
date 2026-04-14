@@ -1,42 +1,53 @@
 
 
-## Problema Identificado
+## Diagnóstico e Correção da Extração do PDF MENTOR (ISIDRO GARCIA FILHO)
 
-Analisando o PDF e o Excel esperado, identifiquei os seguintes problemas na extração:
+### Problema Identificado
 
-### 1. Classificação incorreta de VALE REFEIÇÃO - PAGAMENTO
+O PDF tem 9 páginas, cada uma é um holerite independente ("Demonstrativo de Pagamento Mensal") com meses de 04/2024 a 12/2024. O Excel exportado mostra que **todos os meses estão com os mesmos valores de footer** (Base FGTS=381,60, FGTS do Mês=30,53, Base IRRF=328,18) — que são os valores da **última página** (12/2024, rescisão). Isso indica que os totais e bases por página não estão sendo capturados corretamente.
 
-A função `isDescontoByCode` classifica **todos** os eventos "VALE REFEICAO" como desconto, incluindo o "VALE REFEICAO ADMITIDOS MÊS - PAGAMENTO" (código 0741/1741), que na verdade é um **provento**. Apenas o "VALE REFEICAO ADMITIDOS MÊS - DESCONTO" (código 0742) é desconto.
+### Causa Raiz
 
-A regra atual:
-```
-if (/\bVALE\s+(TRANSPORTE|REFEI)/i.test(normalized)) return true;
-```
-Não distingue entre a variante de pagamento e desconto. Quando a classificação posicional é ambígua (colunas Proventos/Descontos próximas), o heurístico classifica incorretamente o pagamento como desconto.
+O footer do formato MENTOR tem uma particularidade: em várias páginas, os **labels e valores estão mesclados no mesmo bloco de texto** (ex: "Base para FGTS 318,00" como itens na mesma coordenada Y). O extrator de footer (`extractFooter`) e o scanner genérico (`extractAllFields`) podem:
 
-### 2. Competência do header conflitando com "Mês / Ano" da tabela
+1. **Não capturar os totals per-page** quando o formato mescla label+valor na mesma célula
+2. **Os campos de footer na lista `fields[]` ficam duplicados** — cada campo usa `addIfNew` que rejeita duplicatas por key, fazendo com que o primeiro valor capturado prevaleça, mas como `extractAllFields` pode capturar valores incorretos primeiro, os corretos do `extractFooter` são ignorados
 
-O `extractHeader` possui uma busca por "MÊS/ANO" que, ao encontrar a linha do cabeçalho da tabela de eventos, escaneia linhas próximas buscando dígitos soltos. Isso pode capturar valores incorretos como competência do header, conflitando com o período correto extraído dos eventos.
+### Plano de Implementação
 
-### 3. Footer com labels e valores na mesma célula
+#### Passo 1: Diagnóstico via execução real
+- Copiar o PDF para o sandbox
+- Executar um script de diagnóstico que carregue o PDF via pdf.js, processe cada página com `extractPattern1aPage`, e imprima os campos de footer (Base FGTS, Total Vencimentos, Total Descontos, Valor Líquido) por página
+- Comparar com os valores corretos do PDF para identificar onde a captura falha
 
-Neste PDF, o rodapé tem formato onde label e valor estão juntos (ex: "Base para FGTS 318,00" na mesma linha). O extrator de footer já suporta vários formatos mas precisa ser verificado para este padrão específico.
+#### Passo 2: Corrigir extração de footer para formato MENTOR
+- Ajustar `extractFooter` para tratar o caso onde labels e valores estão na mesma linha (mesma Y) como itens separados — formato "Base para FGTS" + "318,00" na mesma linha
+- Garantir que `extractEvents` captura os totals quando aparecem nas linhas de footer (Total de Proventos, Total de Desconto) antes do `break` por "Base para FGTS"
+- Reordenar a prioridade em `extractPattern1aPage`: footer totals devem vir do `extractFooter` e `extractEvents`, não do scanner genérico
 
----
+#### Passo 3: Garantir que dados de footer são ÚNICOS por página
+- Verificar que `addIfNew` em `extractPattern1aPage` não está rejeitando valores corretos de footer porque `extractAllFields` já capturou valores incorretos
+- Se necessário, fazer o footer sobrescrever os valores genéricos em vez de ser filtrado por duplicidade
 
-## Plano de Implementação
+#### Passo 4: Validar contra o PDF completo
+- Reextrair o PDF e verificar que cada mês tem seus próprios valores corretos de:
+  - Total de Proventos
+  - Total de Descontos
+  - Valor Líquido
+  - Base FGTS, FGTS do Mês, Base IRRF
+- Verificar que os eventos (rubricas) estão corretos por mês
 
-### Passo 1: Corrigir `isDescontoByCode` em `pattern1a.ts`
-- Adicionar exceção: se a descrição contém "PAGAMENTO" e **não** contém "DESCONTO", NÃO classificar como desconto para VALE TRANSPORTE/REFEIÇÃO
-- Regra corrigida: só classificar VALE como desconto se a descrição contiver "DESC" ou não contiver "PAGAMENTO"
+### Dados Esperados por Página (referência)
 
-### Passo 2: Refinar detecção de período no header
-- Na seção `MÊS/ANO` do `extractHeader`, evitar que a linha do cabeçalho da tabela de eventos ("Mês / Ano Evento Discriminação...") dispare a busca por competência, pois isso pode capturar o mês de uma linha de evento como competência global
-
-### Passo 3: Adicionar teste para este formato
-- Criar teste unitário que valide a extração correta do PDF "Demonstrativo de Pagamento Mensal" com coluna "Mês / Ano", garantindo:
-  - VALE REFEICAO PAGAMENTO → provento
-  - VALE REFEICAO DESCONTO → desconto
-  - Período correto por página (04/2024, 05/2024, etc.)
-  - Footer values (Base FGTS, Total Proventos, Líquido) capturados por página
+| Página | Mês     | Total Proventos | Total Descontos | Líquido  |
+|--------|---------|-----------------|-----------------|----------|
+| 1      | 04/2024 | 1.135,08        | 435,57          | 699,51   |
+| 2      | 05/2024 | 318,00          | 23,85           | 294,15   |
+| 3      | 06/2024 | 318,00          | 23,85           | 294,15   |
+| 4      | 07/2024 | 318,00          | 23,85           | 294,15   |
+| 5      | 08/2024 | 318,00          | 23,85           | 294,15   |
+| 6      | 09/2024 | 1.272,00        | 108,12          | 1.163,88 |
+| 7      | 10/2024 | 1.272,00        | 374,77          | 897,23   |
+| 8      | 11/2024 | 1.749,00        | 108,12          | 1.640,88 |
+| 9      | 12/2024 | 3.879,60        | 3.879,60        | 0,00     |
 
