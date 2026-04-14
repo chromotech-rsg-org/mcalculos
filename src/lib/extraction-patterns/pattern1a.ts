@@ -97,9 +97,9 @@ const findLabeledValue = (lines: LayoutLine[], labelRegex: RegExp, startIdx = 0,
  * For combined items, only matches when the regex matches at the START of the combination.
  */
 const findLabelXInItems = (items: TextItem[], labelRegex: RegExp): number => {
-  // Strategy 1: single item match
+  // Strategy 1: single item match — return CENTER of matched item
   for (const it of items) {
-    if (labelRegex.test(it.str.trim())) return it.x;
+    if (labelRegex.test(it.str.trim())) return it.x + it.width / 2;
   }
   // Strategy 2: combined consecutive items (match must start near index 0)
   for (let j = 0; j < items.length; j++) {
@@ -107,7 +107,9 @@ const findLabelXInItems = (items: TextItem[], labelRegex: RegExp): number => {
       const combined = items.slice(j, j + len).map(it => it.str).join(' ');
       const match = combined.match(labelRegex);
       if (match && match.index !== undefined && match.index <= 2) {
-        return items[j].x;
+        // Return center of the span of matched items
+        const lastItem = items[j + len - 1];
+        return (items[j].x + lastItem.x + lastItem.width) / 2;
       }
     }
   }
