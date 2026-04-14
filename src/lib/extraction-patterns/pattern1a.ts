@@ -1195,11 +1195,28 @@ const extractEvents = (lines: LayoutLine[]): {
       break; // Stop processing events
     }
     
-    // Stop at footer/resume labels
+    // Stop at footer/resume labels — but first capture totals if on the same line
     if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !/Evento|Discrimina|Descri/i.test(text) && !/^\s*\d{3,4}\s/.test(text)) break;
     if (/Sal\.\s*Contr/i.test(text)) break;
     if (/SAL[AÁ]RIO\s+CONTR/i.test(text)) break;
-    if (/Base\s+(?:para\s+|C[aá]lc\.?\s*)?FGTS/i.test(text)) break;
+    if (/Base\s+(?:para\s+|C[aá]lc\.?\s*)?FGTS/i.test(text)) {
+      // Before breaking, capture totals that may be on the same line (MENTOR format)
+      if (/Total\s+de\s+(Vencimentos|Proventos)/i.test(text) && !totalVencimentos) {
+        // Get values from next line, matched by X position to label
+        if (i + 1 < lines.length) {
+          const labelX = findLabelXInItems(line.items, /Total\s+de\s+(Proventos|Vencimentos)/i);
+          if (labelX >= 0) {
+            const nextVals = lines[i + 1].items
+              .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+              .sort((a, b) => Math.abs(a.x - labelX) - Math.abs(b.x - labelX));
+            if (nextVals.length > 0 && Math.abs(nextVals[0].x - labelX) < 250) {
+              totalVencimentos = nextVals[0].str.trim();
+            }
+          }
+        }
+      }
+      break;
+    }
     if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text)) break;
     if (/Local\s+do\s+Pagamento/i.test(text)) break;
     if (/Assinado\s+eletronicamente/i.test(text)) break;
