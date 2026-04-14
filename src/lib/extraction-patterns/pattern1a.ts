@@ -1195,11 +1195,28 @@ const extractEvents = (lines: LayoutLine[]): {
       break; // Stop processing events
     }
     
-    // Stop at footer/resume labels
+    // Stop at footer/resume labels — but first capture totals if on the same line
     if (/Sal[aá]rio\s+(Base|Fixo)/i.test(text) && !/Evento|Discrimina|Descri/i.test(text) && !/^\s*\d{3,4}\s/.test(text)) break;
     if (/Sal\.\s*Contr/i.test(text)) break;
     if (/SAL[AÁ]RIO\s+CONTR/i.test(text)) break;
-    if (/Base\s+(?:para\s+|C[aá]lc\.?\s*)?FGTS/i.test(text)) break;
+    if (/Base\s+(?:para\s+|C[aá]lc\.?\s*)?FGTS/i.test(text)) {
+      // Before breaking, capture totals that may be on the same line (MENTOR format)
+      if (/Total\s+de\s+(Vencimentos|Proventos)/i.test(text) && !totalVencimentos) {
+        // Get values from next line, matched by X position to label
+        if (i + 1 < lines.length) {
+          const labelX = findLabelXInItems(line.items, /Total\s+de\s+(Proventos|Vencimentos)/i);
+          if (labelX >= 0) {
+            const nextVals = lines[i + 1].items
+              .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+              .sort((a, b) => Math.abs(a.x - labelX) - Math.abs(b.x - labelX));
+            if (nextVals.length > 0 && Math.abs(nextVals[0].x - labelX) < 250) {
+              totalVencimentos = nextVals[0].str.trim();
+            }
+          }
+        }
+      }
+      break;
+    }
     if (/Composi[cç][aã]o\s+do\s+Sal[aá]rio/i.test(text)) break;
     if (/Local\s+do\s+Pagamento/i.test(text)) break;
     if (/Assinado\s+eletronicamente/i.test(text)) break;
@@ -1319,6 +1336,7 @@ const extractFooter = (lines: LayoutLine[]): {
     }
     
     // Second footer row: BASE CÁLC. FGTS, FGTS DO MÊS, BASE CALCULO IRRF, VALOR LÍQUIDO
+    // Also matches: "Base para FGTS FGTS do mês Total de Proventos" (MENTOR format)
     if (/Base\s+(?:para\s+|C[aá]lc?\.?\s*)?FGTS/i.test(text) || (/FGTS\s+do\s+M[eê]s/i.test(text) && /Base\s+C[aá]l(?:c\.?|culo?)?\s*IRRF/i.test(text))) {
       const labelPositions2: { label: string; x: number }[] = [];
       const footerLabels2 = [
@@ -1349,6 +1367,48 @@ const extractFooter = (lines: LayoutLine[]): {
         let closestVal = '';
         let closestDist = Infinity;
         for (const v of allValues2) {
+          const dist = Math.abs(v.x - lp.x);
+          if (dist < closestDist && dist < 250) {
+            closestDist = dist;
+            closestVal = v.str.trim();
+          }
+        }
+        if (closestVal) {
+          (result as any)[lp.label] = closestVal;
+        }
+      }
+      continue;
+    }
+    
+    // MENTOR format: "Base Cál IRRF  Pensão Alim. Extra Folha  Total de Desconto" (multi-label row)
+    if (/Base\s+C[aá]l.*IRRF/i.test(text) && /Total\s+de\s+Desconto/i.test(text)) {
+      const labelPositions3: { label: string; x: number }[] = [];
+      const footerLabels3 = [
+        { regex: /Base\s+C[aá]l(?:c\.?|culo?)?\s*IRRF/i, name: 'baseIrrf' },
+        { regex: /Pens[aã]o\s+Alim/i, name: '_pensaoAlim' },
+        { regex: /Total\s+de\s+Descontos?/i, name: 'totalDescontos' },
+      ];
+      
+      for (const fl of footerLabels3) {
+        const x = findLabelXInItems(items, fl.regex);
+        if (x >= 0) labelPositions3.push({ label: fl.name, x });
+      }
+      
+      const valueItems3 = items
+        .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().includes(','))
+        .sort((a, b) => a.x - b.x);
+      
+      const nextLineValues3 = (i + 1 < lines.length) ? lines[i + 1].items
+        .filter(it => /^[\d.,]+$/.test(it.str.trim()) && it.str.trim().length > 1)
+        .sort((a, b) => a.x - b.x) : [];
+      
+      const allValues3 = valueItems3.length > 0 ? valueItems3 : nextLineValues3;
+      
+      for (const lp of labelPositions3) {
+        if (lp.label.startsWith('_')) continue; // skip internal labels
+        let closestVal = '';
+        let closestDist = Infinity;
+        for (const v of allValues3) {
           const dist = Math.abs(v.x - lp.x);
           if (dist < closestDist && dist < 250) {
             closestDist = dist;
@@ -2161,9 +2221,19 @@ export const extractPattern1aPage = (items: TextItem[]): {
   addIfNew('Conta Corrente', bank.contaCorrente);
 
   // Add totals (from events first, then footer as fallback)
-  addIfNew('Total Vencimentos', totalVencimentos || footer.totalVencimentos);
-  addIfNew('Total Descontos', totalDescontos || footer.totalDescontos);
-  addIfNew('Valor Líquido', valorLiquido || footer.valorLiquido);
+  // Use force-add for totals: these should override any generic scanner values
+  const forceAdd = (key: string, value: string) => {
+    if (!value) return;
+    const idx = fields.findIndex(f => f.key.toLowerCase() === key.toLowerCase());
+    if (idx >= 0) {
+      fields[idx].value = value;
+    } else {
+      fields.push({ key, value });
+    }
+  };
+  forceAdd('Total Vencimentos', totalVencimentos || footer.totalVencimentos);
+  forceAdd('Total Descontos', totalDescontos || footer.totalDescontos);
+  forceAdd('Valor Líquido', valorLiquido || footer.valorLiquido);
 
   // Capture birthday/observation messages
   for (const line of lines) {
